@@ -6,7 +6,7 @@
 
 ### Computación Gráfica
 
-**Autor:** Jhon Elias Aguilar Anccori
+**Autor:** Jhon Aguilar
 
 ![C++](https://img.shields.io/badge/C%2B%2B-17-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
 ![OpenGL](https://img.shields.io/badge/OpenGL-3.3%20Core-5586A4?style=for-the-badge&logo=opengl&logoColor=white)
