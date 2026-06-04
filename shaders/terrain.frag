@@ -2,9 +2,11 @@
 
 out vec4 FragColor;
 
+// Color configurable: terreno (blanco azulado) y dron (amarillo)
+uniform vec3  uColor = vec3(0.85, 0.88, 0.92);
+uniform float uAlpha = 0.7;
+
 void main()
 {
-    // Color plano blanco azulado semi-transparente (estilo Orano Group)
-    // Se usa tanto para los puntos (GL_POINTS) como para la malla (wireframe)
-    FragColor = vec4(0.85, 0.88, 0.92, 0.7);
+    FragColor = vec4(uColor, uAlpha);
 }
