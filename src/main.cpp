@@ -1,3 +1,13 @@
+// ============================================================================
+//  Simulador Topografico con Dron  -  FASE 1: Visor del terreno
+//  OpenGL 3.3 Core Profile + C++17
+//
+//  Carga un .obj y lo dibuja como un terreno 3D estilo "nube de puntos +
+//  wireframe" blanco azulado sobre fondo oscuro, inspirado en el simulador
+//  de Orano Group. Camara orbital con elevacion limitada (20deg..60deg) y
+//  zoom con limites.
+// ============================================================================
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -9,36 +19,39 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <array>
 #include <cmath>
+#include <unordered_map>
 
 // ---- Constantes de ventana ----
-const unsigned int SCR_WIDTH  = 800;
-const unsigned int SCR_HEIGHT = 600;
+const unsigned int SCR_WIDTH  = 1280;
+const unsigned int SCR_HEIGHT = 720;
 
-// ---- Camara orbital ----
-float radius   = 400.0f;
-float camYaw   = 45.0f;
-float camPitch = 40.0f;
+// ---- Parametros de normalizacion del terreno ----
+const float ANCHO_OBJETIVO = 100.0f; // ancho final deseado del terreno (X/Z)
+const float EXAGERACION_Y  = 1.0f;   // factor extra para la altura (1.0 = uniforme)
 
-float lastX = SCR_WIDTH  / 2.0f;
-float lastY = SCR_HEIGHT / 2.0f;
-bool  firstMouse = true;
+// ============================================================================
+//  CAMARA ORBITAL (variables globales usadas por los callbacks)
+// ============================================================================
+float camYaw    = 45.0f;   // rotacion horizontal libre (grados)
+float camElev   = 35.0f;   // elevacion (grados), se limita a [20, 60]
+float camRadius = 170.0f;  // distancia al centro del terreno (zoom)
 
-// ---- Rotacion del modelo ----
-float modelRotY = 0.0f;
+// Limites de la camara (estilo Orano: no ver desde abajo ni cenital)
+const float ELEV_MIN   = 20.0f;
+const float ELEV_MAX   = 60.0f;
+const float RADIO_MIN  = 70.0f;   // no acercarse tanto que salga del terreno
+const float RADIO_MAX  = 300.0f;  // no alejarse tanto que el terreno desaparezca
 
-// ---- Wireframe ----
-bool wireframe    = false;
-bool fKeyPrevious = false;
+// Estado del mouse para la rotacion con boton izquierdo arrastrando
+bool   arrastrando = false;
+bool   primerMouse = true;
+double lastX = SCR_WIDTH  / 2.0;
+double lastY = SCR_HEIGHT / 2.0;
 
-// ---- Tiempo ----
-float deltaTime = 0.0f;
-float lastFrame = 0.0f;
-
-// ================================================================
-// SHADERS
-// ================================================================
+// ============================================================================
+//  SHADERS  -  convencion del curso: crearProgramaShader()
+// ============================================================================
 std::string cargarFuenteShader(const char* ruta) {
     std::ifstream archivo(ruta);
     if (!archivo.is_open()) {
@@ -50,7 +63,7 @@ std::string cargarFuenteShader(const char* ruta) {
     return ss.str();
 }
 
-unsigned int crearProgramaShader(const char* rutaVertex, const char* rutaFragment) {
+GLuint crearProgramaShader(const char* rutaVertex, const char* rutaFragment) {
     std::string vSrc = cargarFuenteShader(rutaVertex);
     std::string fSrc = cargarFuenteShader(rutaFragment);
     const char* vCode = vSrc.c_str();
@@ -59,19 +72,22 @@ unsigned int crearProgramaShader(const char* rutaVertex, const char* rutaFragmen
     int  ok;
     char log[512];
 
-    unsigned int vert = glCreateShader(GL_VERTEX_SHADER);
+    // -- Vertex shader --
+    GLuint vert = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vert, 1, &vCode, nullptr);
     glCompileShader(vert);
     glGetShaderiv(vert, GL_COMPILE_STATUS, &ok);
     if (!ok) { glGetShaderInfoLog(vert, 512, nullptr, log); std::cerr << "ERROR vertex:\n" << log << "\n"; }
 
-    unsigned int frag = glCreateShader(GL_FRAGMENT_SHADER);
+    // -- Fragment shader --
+    GLuint frag = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(frag, 1, &fCode, nullptr);
     glCompileShader(frag);
     glGetShaderiv(frag, GL_COMPILE_STATUS, &ok);
     if (!ok) { glGetShaderInfoLog(frag, 512, nullptr, log); std::cerr << "ERROR fragment:\n" << log << "\n"; }
 
-    unsigned int prog = glCreateProgram();
+    // -- Linkeo --
+    GLuint prog = glCreateProgram();
     glAttachShader(prog, vert);
     glAttachShader(prog, frag);
     glLinkProgram(prog);
@@ -83,52 +99,39 @@ unsigned int crearProgramaShader(const char* rutaVertex, const char* rutaFragmen
     return prog;
 }
 
-// ================================================================
-// CARGADOR OBJ
-// ================================================================
-struct VertCara {
-    int posIdx; // 0-based
-    int uvIdx;  // 0-based, -1 si ausente
-};
+// ============================================================================
+//  CARGADOR OBJ (parsing manual simple, sin Assimp)
+//
+//  - Lee posiciones "v" y caras "f" (formato v, v/vt, v//vn, v/vt/vn)
+//  - Salta el objeto "Sphere" (cupula de cielo decorativa del .obj)
+//  - Triangula caras con mas de 3 vertices mediante fan triangulation
+//  - Normaliza: centra en el origen y escala a ANCHO_OBJETIVO unidades
+//  - Devuelve posiciones compactas (solo vertices usados) + indices de
+//    triangulos remapeados a esas posiciones
+// ============================================================================
 
-// Parsea un token de cara: "123", "123/456", "123/456/789", "123//789"
-VertCara parsearVertCara(const std::string& tok) {
-    VertCara vc{ -1, -1 };
-    size_t s1 = tok.find('/');
-    if (s1 == std::string::npos) {
-        vc.posIdx = std::stoi(tok) - 1;
-    } else {
-        vc.posIdx = std::stoi(tok.substr(0, s1)) - 1;
-        size_t s2 = tok.find('/', s1 + 1);
-        std::string uvStr = (s2 == std::string::npos)
-            ? tok.substr(s1 + 1)
-            : tok.substr(s1 + 1, s2 - s1 - 1);
-        if (!uvStr.empty())
-            vc.uvIdx = std::stoi(uvStr) - 1;
-    }
-    return vc;
+// Extrae solo el indice de posicion (parte antes del primer '/') de un token
+int indicePosicion(const std::string& tok) {
+    size_t s = tok.find('/');
+    std::string num = (s == std::string::npos) ? tok : tok.substr(0, s);
+    return std::stoi(num) - 1; // OBJ es 1-based
 }
 
-// Devuelve vector de floats intercalados: posicion(3) + normal(3) por cada vertice
-std::vector<float> cargarOBJ(const char* ruta, int& outNumTriangulos, float& outTileW, float& outTileD) {
+bool cargarTerrenoOBJ(const char* ruta,
+                      std::vector<float>&        outPos,   // xyz compactos y normalizados
+                      std::vector<unsigned int>& outIdx,   // indices de triangulos
+                      float&                     outAncho) // ancho final del terreno
+{
     std::ifstream archivo(ruta);
     if (!archivo.is_open()) {
         std::cerr << "ERROR: no se pudo abrir " << ruta << "\n";
-        return {};
+        return false;
     }
 
-    std::vector<glm::vec3> tempPos;
-    std::vector<glm::vec2> tempUV;
+    std::vector<glm::vec3>    tempPos;   // todas las posiciones del .obj (indices globales)
+    std::vector<unsigned int> triGlobal; // indices de triangulos (globales, 0-based)
 
-    // Cada triangulo: 3 VertCara
-    std::vector<std::array<VertCara, 3>> triangulos;
-
-    // Indices globales de inicio del objeto de terreno
-    // El OBJ puede tener objetos extra (ej. "Sphere" = cupula de cielo)
-    // Solo cargamos objetos que NO sean "Sphere"
     bool objetoActivo = true; // si no hay linea "o", cargamos todo
-    int  offsetPos    = 0;    // vertices acumulados antes del objeto actual
-    int  posInicioObj = 0;    // cuantos verts tenia tempPos al entrar al objeto
 
     std::string linea;
     while (std::getline(archivo, linea)) {
@@ -138,173 +141,144 @@ std::vector<float> cargarOBJ(const char* ruta, int& outNumTriangulos, float& out
         iss >> prefijo;
 
         if (prefijo == "o") {
-            // Nuevo objeto: actualizamos offset y decidimos si procesarlo
-            offsetPos    = (int)tempPos.size();
-            posInicioObj = offsetPos;
-            std::string nombreObj;
-            iss >> nombreObj;
-            // Saltar la cupula de cielo
-            objetoActivo = (nombreObj != "Sphere");
-            if (objetoActivo)
-                std::cout << "Cargando objeto: " << nombreObj << "\n";
-            else
-                std::cout << "Saltando objeto : " << nombreObj << "\n";
+            std::string nombre;
+            iss >> nombre;
+            // El .obj incluye una "Sphere" (cupula del cielo): la omitimos
+            objetoActivo = (nombre != "Sphere");
+            std::cout << (objetoActivo ? "Cargando objeto: " : "Saltando objeto: ")
+                      << nombre << "\n";
 
         } else if (prefijo == "v") {
             float x, y, z;
             iss >> x >> y >> z;
-            // Siempre acumulamos posiciones para mantener los indices globales correctos
+            // Acumulamos SIEMPRE para mantener correctos los indices globales
             tempPos.push_back({ x, y, z });
 
-        } else if (prefijo == "vt") {
-            float u, v;
-            iss >> u >> v;
-            tempUV.push_back({ u, v });
-
         } else if (prefijo == "f" && objetoActivo) {
-            // Solo triangulamos caras del objeto activo
-            std::vector<VertCara> caraVerts;
+            // Leemos todos los indices de la cara
+            std::vector<int> cara;
             std::string tok;
             while (iss >> tok)
-                caraVerts.push_back(parsearVertCara(tok));
+                cara.push_back(indicePosicion(tok));
 
             // Fan triangulation: (0,1,2), (0,2,3), ...
-            for (size_t i = 1; i + 1 < caraVerts.size(); ++i) {
-                std::array<VertCara, 3> tri = { caraVerts[0], caraVerts[i], caraVerts[i + 1] };
-                triangulos.push_back(tri);
+            for (size_t i = 1; i + 1 < cara.size(); ++i) {
+                triGlobal.push_back((unsigned int)cara[0]);
+                triGlobal.push_back((unsigned int)cara[i]);
+                triGlobal.push_back((unsigned int)cara[i + 1]);
             }
         }
     }
 
-    // ------ Centrar el terreno en el origen (bounding box solo de vertices usados) ------
-    // tempPos contiene vertices de TODOS los objetos (incluido Sphere), por eso se
-    // mide solo sobre los vertices que realmente referencian los triangulos del terreno
+    if (triGlobal.empty()) {
+        std::cerr << "ERROR: el OBJ no contiene caras de terreno utilizables\n";
+        return false;
+    }
+
+    // ---- Remapear a un arreglo compacto solo con los vertices usados ----
+    std::unordered_map<unsigned int, unsigned int> remap;
+    std::vector<glm::vec3> compact;
+    compact.reserve(tempPos.size());
+
+    for (unsigned int gi : triGlobal) {
+        auto it = remap.find(gi);
+        unsigned int nuevo;
+        if (it == remap.end()) {
+            nuevo = (unsigned int)compact.size();
+            remap[gi] = nuevo;
+            compact.push_back(tempPos[gi]);
+        } else {
+            nuevo = it->second;
+        }
+        outIdx.push_back(nuevo);
+    }
+
+    // ---- Normalizacion: bounding box, centrado y escalado ----
     glm::vec3 bMin( 1e9f), bMax(-1e9f);
-    for (auto& tri : triangulos) {
-        for (auto& vc : tri) {
-            glm::vec3 p = tempPos[vc.posIdx];
-            bMin = glm::min(bMin, p);
-            bMax = glm::max(bMax, p);
-        }
+    for (auto& p : compact) {
+        bMin = glm::min(bMin, p);
+        bMax = glm::max(bMax, p);
     }
-    outTileW = bMax.x - bMin.x;
-    outTileD = bMax.z - bMin.z;
     glm::vec3 centro = (bMin + bMax) * 0.5f;
-    for (auto& p : tempPos) {
-        p -= centro;
+    float spanX = bMax.x - bMin.x;
+    float spanZ = bMax.z - bMin.z;
+    float spanMax = std::max(spanX, spanZ);
+    float escala  = (spanMax > 1e-6f) ? (ANCHO_OBJETIVO / spanMax) : 1.0f;
+
+    outPos.reserve(compact.size() * 3);
+    for (auto& p : compact) {
+        glm::vec3 n = (p - centro) * escala;
+        n.y *= EXAGERACION_Y; // exageracion opcional de la altura
+        outPos.push_back(n.x);
+        outPos.push_back(n.y);
+        outPos.push_back(n.z);
     }
 
-    // ------ Calcular normales por vertice (acumulacion de normales de cara) ------
-    // Se usa la normal de cara ponderada por area (sin normalizar el cross product)
-    // para que caras grandes aporten mas peso → smooth shading de mayor calidad
-    std::vector<glm::vec3> normalAcum(tempPos.size(), glm::vec3(0.0f));
+    outAncho = spanMax * escala;
 
-    for (auto& tri : triangulos) {
-        glm::vec3 p0 = tempPos[tri[0].posIdx];
-        glm::vec3 p1 = tempPos[tri[1].posIdx];
-        glm::vec3 p2 = tempPos[tri[2].posIdx];
-        glm::vec3 fn = glm::cross(p1 - p0, p2 - p0); // ponderado por area
-        normalAcum[tri[0].posIdx] += fn;
-        normalAcum[tri[1].posIdx] += fn;
-        normalAcum[tri[2].posIdx] += fn;
-    }
-    for (auto& n : normalAcum)
-        if (glm::length(n) > 1e-6f) n = glm::normalize(n);
-
-    // ------ Construir buffer intercalado (pos + normal) ------
-    std::vector<float> verts;
-    verts.reserve(triangulos.size() * 3 * 6);
-
-    for (auto& tri : triangulos) {
-        for (auto& vc : tri) {
-            glm::vec3 p = tempPos[vc.posIdx];
-            glm::vec3 n = normalAcum[vc.posIdx];
-            verts.push_back(p.x); verts.push_back(p.y); verts.push_back(p.z);
-            verts.push_back(n.x); verts.push_back(n.y); verts.push_back(n.z);
-        }
-    }
-
-    outNumTriangulos = (int)triangulos.size();
-    std::cout << "Vertices cargados : " << tempPos.size() << "\n";
-    std::cout << "Triangulos        : " << outNumTriangulos << "\n";
-    return verts;
+    std::cout << "Vertices del terreno : " << compact.size() << "\n";
+    std::cout << "Triangulos           : " << (outIdx.size() / 3) << "\n";
+    std::cout << "Ancho normalizado    : " << outAncho << " unidades\n";
+    std::cout << "Altura (Y) span      : " << (bMax.y - bMin.y) * escala * EXAGERACION_Y << " unidades\n";
+    return true;
 }
 
-// ================================================================
-// CALLBACKS
-// ================================================================
+// ============================================================================
+//  CALLBACKS GLFW
+// ============================================================================
 void framebuffer_size_callback(GLFWwindow*, int w, int h) {
     glViewport(0, 0, w, h);
 }
 
-void mouse_callback(GLFWwindow*, double xposIn, double yposIn) {
-    float xpos = static_cast<float>(xposIn);
-    float ypos = static_cast<float>(yposIn);
-
-    if (firstMouse) { lastX = xpos; lastY = ypos; firstMouse = false; }
-
-    float xoff = (xpos - lastX) * 0.2f;
-    float yoff = (lastY - ypos) * 0.2f;
-    lastX = xpos; lastY = ypos;
-
-    camYaw   += xoff;
-    camPitch += yoff;
-    if (camPitch >  89.0f) camPitch =  89.0f;
-    if (camPitch < -89.0f) camPitch = -89.0f;
-}
-
-void scroll_callback(GLFWwindow*, double, double yoffset) {
-    radius -= (float)yoffset * 10.0f;
-    if (radius <   5.0f) radius =   5.0f;
-    if (radius > 800.0f) radius = 800.0f;
-}
-
-// ================================================================
-// ENTRADA DE TECLADO
-// ================================================================
-void procesarEntrada(GLFWwindow* window) {
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
-
-    // W/S → zoom (radio)
-    float speed = 120.0f * deltaTime;
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) radius -= speed;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) radius += speed;
-    if (radius <   5.0f) radius =   5.0f;
-    if (radius > 800.0f) radius = 800.0f;
-
-    // A/D → rotacion del modelo en Y
-    float rotSpeed = 90.0f * deltaTime;
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) modelRotY += rotSpeed;
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) modelRotY -= rotSpeed;
-
-    // F → toggle wireframe (deteccion de flanco)
-    bool fKeyNow = (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS);
-    if (fKeyNow && !fKeyPrevious) {
-        wireframe = !wireframe;
-        if (wireframe) {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            std::cout << "Wireframe: ON\n";
-        } else {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            std::cout << "Wireframe: OFF\n";
+// Activa/desactiva el arrastre con el boton izquierdo del mouse
+void mouse_button_callback(GLFWwindow*, int button, int action, int) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) {
+            arrastrando = true;
+            primerMouse = true; // evita el "salto" al iniciar el arrastre
+        } else if (action == GLFW_RELEASE) {
+            arrastrando = false;
         }
     }
-    fKeyPrevious = fKeyNow;
 }
 
-// ================================================================
-// MAIN
-// ================================================================
+// Rotacion orbital horizontal/vertical mientras se arrastra el boton izquierdo
+void mouse_callback(GLFWwindow*, double xpos, double ypos) {
+    if (!arrastrando) return;
+
+    if (primerMouse) { lastX = xpos; lastY = ypos; primerMouse = false; }
+
+    float xoff = (float)(xpos - lastX) * 0.3f;
+    float yoff = (float)(lastY - ypos) * 0.3f; // invertido: arrastrar arriba sube la vista
+    lastX = xpos; lastY = ypos;
+
+    camYaw  += xoff;
+    camElev += yoff;
+
+    // Limites de elevacion (vista isometrica inclinada)
+    if (camElev < ELEV_MIN) camElev = ELEV_MIN;
+    if (camElev > ELEV_MAX) camElev = ELEV_MAX;
+}
+
+// Zoom con limites
+void scroll_callback(GLFWwindow*, double, double yoffset) {
+    camRadius -= (float)yoffset * 8.0f;
+    if (camRadius < RADIO_MIN) camRadius = RADIO_MIN;
+    if (camRadius > RADIO_MAX) camRadius = RADIO_MAX;
+}
+
+// ============================================================================
+//  MAIN
+// ============================================================================
 int main() {
-    // -- Inicializar GLFW --
+    // -- Inicializar GLFW (OpenGL 3.3 Core) --
     glfwInit();
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     GLFWwindow* window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT,
-        "Visor Terreno OBJ - SIS226", nullptr, nullptr);
+        "Simulador Topografico - Visor de Terreno (Fase 1)", nullptr, nullptr);
     if (!window) {
         std::cerr << "ERROR: no se pudo crear la ventana GLFW\n";
         glfwTerminate();
@@ -312,113 +286,112 @@ int main() {
     }
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    glfwSetMouseButtonCallback(window,     mouse_button_callback);
     glfwSetCursorPosCallback(window,       mouse_callback);
     glfwSetScrollCallback(window,          scroll_callback);
-    glfwSetInputMode(window, GLFW_CURSOR,  GLFW_CURSOR_DISABLED);
 
     // -- Inicializar GLAD --
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cerr << "ERROR: no se pudo inicializar GLAD\n";
         return -1;
     }
+
     glEnable(GL_DEPTH_TEST);
+    // Mezcla para el wireframe/puntos semi-transparentes
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // Tamano de los puntos (GL_POINTS) ~2-3 px
+    glPointSize(2.5f);
 
-    // -- Shaders --
-    unsigned int shaderProgram = crearProgramaShader("src/vertex.glsl", "src/fragment.glsl");
+    // -- Shaders externos --
+    GLuint shaderProgram = crearProgramaShader("shaders/terrain.vert", "shaders/terrain.frag");
 
-    // -- Cargar OBJ --
-    int   numTriangulos = 0;
-    float tileW = 64.0f, tileD = 64.0f;
-    std::vector<float> vertices = cargarOBJ("SnowTerrain.obj", numTriangulos, tileW, tileD);
-    if (vertices.empty()) {
-        std::cerr << "ERROR: no se pudieron cargar vertices del OBJ\n";
+    // -- Cargar y normalizar el terreno --
+    std::vector<float>        posiciones;
+    std::vector<unsigned int> indices;
+    float anchoTerreno = ANCHO_OBJETIVO;
+    if (!cargarTerrenoOBJ("assets/SnowTerrain.obj", posiciones, indices, anchoTerreno)) {
+        std::cerr << "ERROR: fallo la carga del terreno\n";
         return -1;
     }
-    int numVertices = (int)(vertices.size() / 6);
-    std::cout << "Tile size: " << tileW << " x " << tileD << " unidades\n";
+    int numVertices = (int)(posiciones.size() / 3);
+    int numIndices  = (int)indices.size();
 
-    // -- VAO / VBO --
-    unsigned int VAO, VBO;
+    // -- VAO / VBO / EBO --
+    GLuint VAO, VBO, EBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
 
     glBindVertexArray(VAO);
+
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER,
-        (GLsizeiptr)(vertices.size() * sizeof(float)),
-        vertices.data(), GL_STATIC_DRAW);
+        (GLsizeiptr)(posiciones.size() * sizeof(float)),
+        posiciones.data(), GL_STATIC_DRAW);
 
-    // Posicion (location 0) → primeros 3 floats del stride de 6
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
-        6 * sizeof(float), (void*)0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+        (GLsizeiptr)(indices.size() * sizeof(unsigned int)),
+        indices.data(), GL_STATIC_DRAW);
+
+    // Posicion (location 0) -> 3 floats
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-
-    // Normal (location 1) → floats 3-5 del stride de 6
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
-        6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
 
     glBindVertexArray(0);
 
-    // ================================================================
-    // BUCLE PRINCIPAL
-    // ================================================================
+    // Localizaciones de uniforms (constantes durante la ejecucion)
+    GLint locModel = glGetUniformLocation(shaderProgram, "model");
+    GLint locView  = glGetUniformLocation(shaderProgram, "view");
+    GLint locProj  = glGetUniformLocation(shaderProgram, "projection");
+
+    std::cout << "\nControles:\n"
+              << "  - Arrastrar boton izquierdo : rotar (orbital)\n"
+              << "  - Scroll                    : zoom\n"
+              << "  - ESC                       : salir\n\n";
+
+    // ========================================================================
+    //  BUCLE PRINCIPAL
+    // ========================================================================
     while (!glfwWindowShouldClose(window)) {
-        float currentFrame = static_cast<float>(glfwGetTime());
-        deltaTime = currentFrame - lastFrame;
-        lastFrame = currentFrame;
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
 
-        procesarEntrada(window);
-
-        glClearColor(0.10f, 0.12f, 0.18f, 1.0f);
+        // -- Fondo oscuro (#0a0d14) --
+        glClearColor(0.039f, 0.051f, 0.078f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // -- Posicion de camara (coordenadas esfericas) --
-        float yawRad   = glm::radians(camYaw);
-        float pitchRad = glm::radians(camPitch);
+        // -- Posicion de camara en coordenadas esfericas (orbita el origen) --
+        float yawRad  = glm::radians(camYaw);
+        float elevRad = glm::radians(camElev);
         glm::vec3 camPos(
-            radius * cosf(pitchRad) * sinf(yawRad),
-            radius * sinf(pitchRad),
-            radius * cosf(pitchRad) * cosf(yawRad)
+            camRadius * cosf(elevRad) * sinf(yawRad),
+            camRadius * sinf(elevRad),
+            camRadius * cosf(elevRad) * cosf(yawRad)
         );
+        glm::vec3 target(0.0f); // el terreno ya esta centrado en el origen
 
-        // -- Luz orbital automatica (alta para iluminar todo el grid) --
-        glm::vec3 lightPos(
-            sinf(currentFrame * 0.3f) * 300.0f,
-            250.0f,
-            cosf(currentFrame * 0.3f) * 300.0f
-        );
+        // -- Matrices MVP --
+        glm::mat4 model      = glm::mat4(1.0f);
+        glm::mat4 view       = glm::lookAt(camPos, target, glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 projection = glm::perspective(glm::radians(45.0f),
+            (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 1000.0f);
 
-        // -- Matrices --
-        glm::mat4 view  = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        glm::mat4 proj  = glm::perspective(glm::radians(45.0f),
-            (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.5f, 3000.0f);
-
-        // -- Uniforms constantes por frame --
         glUseProgram(shaderProgram);
-        int locModel = glGetUniformLocation(shaderProgram, "model");
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "view"),       1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "projection"), 1, GL_FALSE, glm::value_ptr(proj));
-        glUniform3fv(glGetUniformLocation(shaderProgram, "lightPos"),  1, glm::value_ptr(lightPos));
-        glUniform3fv(glGetUniformLocation(shaderProgram, "viewPos"),   1, glm::value_ptr(camPos));
-        glUniform3f(glGetUniformLocation(shaderProgram, "lightColor"),  1.0f, 1.0f, 1.0f);
-        glUniform3f(glGetUniformLocation(shaderProgram, "objectColor"), 0.85f, 0.90f, 0.95f);
-
-        // -- Dibujar grid 11x11 de tiles (5 en cada direccion) --
-        const int TILE_RANGE = 5;
-        glm::mat4 globalRot = glm::rotate(glm::mat4(1.0f),
-            glm::radians(modelRotY), glm::vec3(0.0f, 1.0f, 0.0f));
+        glUniformMatrix4fv(locModel, 1, GL_FALSE, glm::value_ptr(model));
+        glUniformMatrix4fv(locView,  1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(locProj,  1, GL_FALSE, glm::value_ptr(projection));
 
         glBindVertexArray(VAO);
-        for (int ix = -TILE_RANGE; ix <= TILE_RANGE; ++ix) {
-            for (int iz = -TILE_RANGE; iz <= TILE_RANGE; ++iz) {
-                glm::mat4 tileTrans = glm::translate(glm::mat4(1.0f),
-                    glm::vec3(ix * tileW, 0.0f, iz * tileD));
-                glm::mat4 tileModel = globalRot * tileTrans;
-                glUniformMatrix4fv(locModel, 1, GL_FALSE, glm::value_ptr(tileModel));
-                glDrawArrays(GL_TRIANGLES, 0, numVertices);
-            }
-        }
+
+        // -- Pasada 1: nube de puntos (GL_POINTS) --
+        glDrawArrays(GL_POINTS, 0, numVertices);
+
+        // -- Pasada 2: malla wireframe (triangulos en modo linea) --
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glDrawElements(GL_TRIANGLES, numIndices, GL_UNSIGNED_INT, 0);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); // restaurar
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -426,6 +399,7 @@ int main() {
 
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
+    glDeleteBuffers(1, &EBO);
     glDeleteProgram(shaderProgram);
     glfwTerminate();
     return 0;
