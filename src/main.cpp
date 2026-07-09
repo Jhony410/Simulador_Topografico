@@ -682,7 +682,7 @@ int main() {
             glDisable(GL_POLYGON_OFFSET_FILL);
 
             // Pasada 2: aristas amarillas encima (estructura del dron)
-            glUniform3f(dLocC,1.0f,0.83f,0.0f); glUniform1f(dLocA,1.0f);
+            glUniform3f(dLocC,0.5f,0.1f,0.0f); glUniform1f(dLocA,1.0f);
             glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);
             glDrawElements(GL_TRIANGLES,numIdxD,GL_UNSIGNED_INT,0);
             glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);

@@ -425,7 +425,7 @@ curl -L -o include/stb_easy_font.h   https://raw.githubusercontent.com/nothings/
 Con el script incluido:
 
 ```bat
-compilar.bat
+.\compilar.bat
 ```
 
 O manualmente:
