@@ -5,6 +5,7 @@
 #include "Componentes.h"
 #include "CurvasNivel.h"
 #include "Dron.h"
+#include "EscalaMundo.h"
 #include "EstadoMision.h"
 #include "EstadoAplicacion.h"
 #include "GeneradorCurvas.h"
@@ -36,6 +37,11 @@ public:
     // Cambia de mapa: recarga el terreno y reposiciona el dron.
     bool cargarMapa(int indice);
     bool reiniciarMision();
+
+    // Borra la exploracion SIN recargar el terreno ni mover el dron: el mapa se
+    // vuelve a oscurecer y el porcentaje regresa a 0. Es mucho mas barato que
+    // cargarMapa() porque no vuelve a parsear el GLB ni a resembrar torretas.
+    void reiniciarEscaneo();
 
     // Indice del mapa cuyo nombre de archivo coincide, o -1 si no esta.
     int buscarMapaPorNombre(const std::string& nombreArchivo) const;
@@ -69,6 +75,12 @@ public:
     const SistemaMedicion& obtenerSistemaMedicion() const { return sistemaMedicion; }
     Ajustes& obtenerAjustes() { return ajustes; }
     const Ajustes& obtenerAjustes() const { return ajustes; }
+
+    // Escala derivada del terreno activo. Se recalcula en cada cargarMapa().
+    const EscalaMundo& obtenerEscala() const { return escala; }
+
+    // Pista discreta de arranque: 1 mientras se muestra, 0 cuando ya se apago.
+    float obtenerAlphaPistaInicial() const;
     EstadoAplicacion obtenerEstadoAplicacion() const { return estadoAplicacion; }
     void establecerEstadoAplicacion(EstadoAplicacion estado) { estadoAplicacion = estado; }
     const std::string& obtenerError() const { return mensajeError; }
@@ -114,13 +126,20 @@ private:
     AvisoHUD         aviso;
     bool             curvasSucias = true;
     Ajustes          ajustes;
+    EscalaMundo      escala;
     EstadoAplicacion estadoAplicacion = EstadoAplicacion::Loading;
     std::string      mensajeError;
+    float            tiempoDesdeInicio = 0.0f;   // para la pista de arranque
+    bool             misionAnunciada = false;    // el 100% se anuncia una sola vez
 
     // Geometria del dron: se carga una vez y se reutiliza entre mapas.
     MallaCruda mallaDron;
     glm::vec3  pivotesHelices[4]{};
     bool       dronCargado = false;
+    // Diagonal del bounding box del modelo ya normalizado. Es el dato que
+    // permite a EscalaMundo calcular el multiplicador correcto para CADA mapa
+    // sin volver a tocar la malla.
+    float      diagonalMallaDron = 1.0f;
 
     // Grafo de escena
     NodoEscena  raiz{"raiz"};

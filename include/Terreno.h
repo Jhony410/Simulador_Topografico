@@ -4,6 +4,7 @@
 #include "Quadtree.h"
 
 #include <glm/glm.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -40,6 +41,15 @@ public:
     const Quadtree&   obtenerQuadtree()          const { return quadtree; }
 
     const std::vector<float>& obtenerAlturas() const { return alturas; }
+
+    // Cobertura real del heightmap: 1 en las celdas que recibieron al menos un
+    // vertice de la malla original, 0 en las que solo existen porque
+    // rellenarHuecos() las interpolo. Es lo que permite que el porcentaje de
+    // exploracion NO cuente celdas que caen fuera del terreno (mapas insulares,
+    // DEM recortados o mallas de calles no llenan el rectangulo completo).
+    const std::vector<uint8_t>& obtenerCobertura() const { return cobertura; }
+    std::size_t obtenerCeldasValidas() const { return celdasValidas; }
+
     int  obtenerAnchoGrilla() const { return anchoGrilla; }
     bool estaCargado()        const { return anchoGrilla > 0 && !malla.vacia(); }
 
@@ -67,7 +77,9 @@ private:
     LimitesMundo limites;
     bool         mallaDeLineas = false;   // true para mapas de calles (CSV)
 
-    std::vector<float> alturas;           // grilla [z * anchoGrilla + x]
+    std::vector<float>   alturas;         // grilla [z * anchoGrilla + x]
+    std::vector<uint8_t> cobertura;       // 1 = la celda pertenece al terreno real
+    std::size_t          celdasValidas = 0;
     int                anchoGrilla = 0;
     int                resolucionRejilla = 0;
     float              alturaMedia = 0.0f;

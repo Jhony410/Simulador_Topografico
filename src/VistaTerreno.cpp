@@ -45,6 +45,8 @@ void VistaTerreno::inicializar(GestorRecursos& recursos) {
     locCurvas           = glGetUniformLocation(programa, "uCurvas");
     locTiempo           = glGetUniformLocation(programa, "uTiempo");
     locExploracion      = glGetUniformLocation(programa, "uExploracion");
+    locNiebla           = glGetUniformLocation(programa, "uNiebla");
+    locRadioRevelado    = glGetUniformLocation(programa, "uRadioRevelado");
 
     glGenTextures(1, &texturaExploracion);
     glBindTexture(GL_TEXTURE_2D, texturaExploracion);
@@ -140,7 +142,8 @@ int VistaTerreno::dibujar(const Camara& camara, const glm::mat4& matrizModelo,
                           const ComponenteMaterial& material, bool topologiaLineas,
                           const glm::vec3& posicionDron, float aspecto,
                           const Quadtree& quadtree, const std::vector<int>& nodosVisibles,
-                          const Ajustes& ajustes, const LimitesMundo& limites,
+                          const Ajustes& ajustes, const EscalaMundo& escala,
+                          const LimitesMundo& limites,
                           float minAltura, float maxAltura, float tiempo) {
     GLuint vaoLineas = topologiaLineas ? vaoCalles : vaoRejilla;
     if (!vaoLineas) return 0;
@@ -153,8 +156,14 @@ int VistaTerreno::dibujar(const Camara& camara, const glm::mat4& matrizModelo,
     glUniform1f(locAlphaMaximo, material.alpha);
     glUniform3fv(locPosicionDron, 1, glm::value_ptr(posicionDron));
     glUniform3fv(locPosicionCamara, 1, glm::value_ptr(camara.obtenerPosicion()));
-    glUniform1f(locRadioNitido, Configuracion::RADIO_NITIDO);
-    glUniform1f(locRadioDesvanecido, Configuracion::RADIO_DESVANECIDO);
+    // Los radios de atenuacion se miden contra la diagonal del terreno: en un
+    // mapa el doble de grande la caida ocurre el doble de lejos.
+    glUniform1f(locRadioNitido, escala.radioNitido);
+    glUniform1f(locRadioDesvanecido, escala.radioDesvanecido);
+    // Niebla proporcional: el relieve lejano se apaga sin llegar a desaparecer,
+    // que es lo que da la sensacion de escala del terreno.
+    glUniform2f(locNiebla, escala.diagonalTerreno * 0.55f, escala.diagonalTerreno * 2.6f);
+    glUniform1f(locRadioRevelado, escala.radioEscaneo);
     glUniform1i(locModo, static_cast<int>(ajustes.visualizacion));
     glUniform1f(locMinAltura, minAltura);
     glUniform1f(locMaxAltura, maxAltura);

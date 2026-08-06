@@ -20,8 +20,19 @@ public:
 private:
     void aplicarCambioDeMapa(int indice);
     void actualizarTitulo();
+    // Crea la ventana al 95x92% del monitor principal y la centra.
+    bool crearVentana();
+    // F11: alterna entre ventana y pantalla completa restaurando el tamano y la
+    // posicion previos. Recalcula viewport; la proyeccion se rehace sola porque
+    // el aspecto se lee del framebuffer cada frame.
+    void alternarPantallaCompleta();
 
     GLFWwindow*        ventana = nullptr;
+    // Estado que hay que guardar para poder volver de pantalla completa.
+    bool enPantallaCompleta = false;
+    int  ventanaX = 0, ventanaY = 0;
+    int  ventanaAncho = 0, ventanaAlto = 0;
+
     Escena             escena;        // MODELO
     Camara             camara;        // VISTA (parametros de encuadre)
     Renderizador       renderizador;  // VISTA

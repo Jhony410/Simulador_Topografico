@@ -100,10 +100,16 @@ void VistaCurvas::actualizarCurvas(const CurvasNivel& curvas, const LimitesMundo
                  datos.data(), GL_DYNAMIC_DRAW);
 }
 
+glm::vec4 VistaCurvas::rectangulo(float anchoPantalla, float altoPantalla) {
+    (void)anchoPantalla;
+    const float ancho = 300.0f, alto = 195.0f;
+    return glm::vec4(24.0f, altoPantalla - 250.0f - alto, ancho, alto);
+}
+
 int VistaCurvas::dibujar(int anchoPantalla, int altoPantalla) {
     if (!vao) return 0;
 
-    glm::vec4 panel = DisenoHUD::rectPanelCurvas((float)anchoPantalla, (float)altoPantalla);
+    glm::vec4 panel = rectangulo((float)anchoPantalla, (float)altoPantalla);
     // El HUD mide Y desde arriba y OpenGL desde abajo: hay que voltearla.
     GLint px = (GLint)panel.x;
     GLint py = (GLint)(altoPantalla - panel.y - panel.w);

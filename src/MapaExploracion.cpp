@@ -3,12 +3,23 @@
 #include <algorithm>
 #include <cmath>
 
-void MapaExploracion::reiniciar(int nuevoAncho, int nuevoAlto, const LimitesMundo& nuevosLimites) {
+void MapaExploracion::reiniciar(int nuevoAncho, int nuevoAlto, const LimitesMundo& nuevosLimites,
+                                const std::vector<uint8_t>& validez) {
     ancho = std::max(0, nuevoAncho);
     alto  = std::max(0, nuevoAlto);
     limites = nuevosLimites;
-    mascara.assign(static_cast<std::size_t>(ancho) * alto, 0);
+    const std::size_t total = static_cast<std::size_t>(ancho) * alto;
+    mascara.assign(total, 0);
+
+    // Denominador del porcentaje: solo las celdas que pertenecen al terreno.
+    if (validez.size() == total) validas = validez;
+    else                         validas.assign(total, 1);
+    totalValidas = 0;
+    for (uint8_t v : validas) if (v) ++totalValidas;
+    if (totalValidas == 0) totalValidas = total;   // nunca dividir entre cero
+
     celdasMarcadas = 0;
+    celdasMarcadasValidas = 0;
     ++revision;
 }
 
@@ -25,10 +36,13 @@ bool MapaExploracion::estaExplorada(int cx, int cz) const {
 
 bool MapaExploracion::marcarCelda(int cx, int cz) {
     if (cx < 0 || cz < 0 || cx >= ancho || cz >= alto) return false;
-    uint8_t& celda = mascara[(std::size_t)cz * ancho + cx];
-    if (celda) return false;
-    celda = 1;
-    ++celdasMarcadas;   // contador incremental: evita recorrer todo el mapa
+    const std::size_t indice = (std::size_t)cz * ancho + cx;
+    uint8_t& celda = mascara[indice];
+    if (celda) return false;   // ya contada: no se puede sumar dos veces
+    celda = MARCADA;
+    // Contadores incrementales: evitan recorrer todo el mapa cada frame.
+    ++celdasMarcadas;
+    if (indice < validas.size() && validas[indice]) ++celdasMarcadasValidas;
     ++revision;
     return true;
 }
@@ -92,12 +106,17 @@ bool MapaExploracion::descomprimirRLE(const std::vector<uint32_t>& tiradas,
 
     mascara.assign(total, 0);
     celdasMarcadas = 0;
+    celdasMarcadasValidas = 0;
 
     std::size_t posicion = 0;
     uint8_t valor = 0;
     for (uint32_t longitud : tiradas) {
         if (valor) {
-            for (uint32_t k = 0; k < longitud; ++k) mascara[posicion + k] = 1;
+            for (uint32_t k = 0; k < longitud; ++k) {
+                mascara[posicion + k] = MARCADA;
+                if (posicion + k < validas.size() && validas[posicion + k])
+                    ++celdasMarcadasValidas;
+            }
             celdasMarcadas += longitud;
         }
         posicion += longitud;
@@ -108,7 +127,9 @@ bool MapaExploracion::descomprimirRLE(const std::vector<uint32_t>& tiradas,
 }
 
 float MapaExploracion::porcentajeExplorado() const {
-    std::size_t total = mascara.size();
-    if (total == 0) return 0.0f;
-    return (float)celdasMarcadas / (float)total;
+    // Porcentaje REAL de territorio cubierto: celdas validas exploradas sobre
+    // celdas validas totales. Las celdas fuera del terreno no cuentan ni en el
+    // numerador ni en el denominador, asi que el 100% es alcanzable.
+    if (totalValidas == 0) return 0.0f;
+    return (float)celdasMarcadasValidas / (float)totalValidas;
 }

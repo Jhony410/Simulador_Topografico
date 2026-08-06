@@ -22,16 +22,19 @@ inline const char* nombreModoVisualizacion(ModoVisualizacion modo) {
 }
 
 struct Ajustes {
-    float sensibilidadMouse = 0.30f;
+    // Sensibilidad baja: es una de las causas de que el vuelo se sintiera
+    // nervioso. En grados de orbita por pixel de arrastre.
+    float sensibilidadMouse = 0.10f;
     float multiplicadorVelocidadDron = 1.0f;
     float intensidadPuntos = 0.70f;
     int   densidadWireframe = 2; // 0=baja, 1=media, 2=alta
     bool  curvasNivel = true;
     bool  particulas = true;
     bool  minimapa = true;
-    bool  estadisticas = true;
     bool  controles = true;
-    bool  rutaVuelo = true;
+    bool  rutaVuelo = false;     // la guia al objetivo distrae en vuelo libre
+    // Toda la informacion tecnica (FPS, coordenadas, altitud, escalas) esta
+    // oculta por defecto y se alterna con F3.
     bool  modoDebug = false;
     ModoVisualizacion visualizacion = ModoVisualizacion::WireframePuntos;
 

@@ -86,6 +86,21 @@ void Terreno::finalizar(std::vector<glm::vec3>& crudo) {
         if (y > celda) celda = y;
     }
 
+    // Cobertura ANTES de rellenar: solo aqui se sabe que celdas recibieron un
+    // vertice de verdad. Despues de la dilatacion todas tienen altura y el
+    // porcentaje de exploracion contaria terreno que no existe.
+    cobertura.assign(alturas.size(), 0);
+    celdasValidas = 0;
+    for (std::size_t i = 0; i < alturas.size(); ++i)
+        if (alturas[i] > -1e8f) { cobertura[i] = 1; ++celdasValidas; }
+    // Blindaje: si la malla es tan dispersa que apenas toca celdas, se cuenta
+    // la grilla entera para no dejar el porcentaje bloqueado en un valor absurdo.
+    if (celdasValidas < alturas.size() / 20) {
+        cobertura.assign(alturas.size(), 1);
+        celdasValidas = alturas.size();
+    }
+    std::cout << "[HEIGHTMAP] Celdas validas: " << celdasValidas << " / " << alturas.size() << "\n";
+
     rellenarHuecos();
     double sumaAlturas = 0.0;
     for (float h : alturas) sumaAlturas += h;

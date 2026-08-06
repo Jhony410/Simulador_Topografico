@@ -7,13 +7,23 @@
 #include <vector>
 
 class Escena;
-class EstadoMision;
 class GestorRecursos;
 class ContadorRendimiento;
 class Camara;
 
 // ============================================================================
-//  VISTA: capa 2D en proyeccion ortografica (botones de mapa, teclas, textos).
+//  VISTA: capa 2D en proyeccion ortografica.
+//
+//  Interfaz deliberadamente MINIMA durante el vuelo:
+//    - Arriba a la izquierda: GEODRONE + subtitulo pequeno.
+//    - Abajo a la izquierda:  minimapa (lo dibuja VistaMinimapa), porcentaje de
+//                             exploracion y barra fina de progreso.
+//    - Abajo a la derecha:    lista corta de controles.
+//    - Centro:                solo la pista de arranque, unos segundos.
+//
+//  FPS, coordenadas, altitud, velocidad, draw calls y metricas de LOD NO se
+//  dibujan por defecto: viven en el panel de depuracion que alterna F3.
+//
 //  Dibuja con un unico programa que solo recibe posiciones en pixeles y un
 //  color plano; el texto sale de stb_easy_font convertido a triangulos.
 // ============================================================================
@@ -26,7 +36,7 @@ public:
     int dibujar(Escena& escena, const EstadoTeclas& teclas,
                 float anchoPantalla, float altoPantalla,
                 const ContadorRendimiento& metricas, const Camara& camara,
-                int opcionMenu, int opcionConfiguracion, bool enConfiguracion);
+                int opcionMenu, int mapaSeleccionado);
 
 private:
     void dibujarRectangulo(float x, float y, float ancho, float alto, const glm::vec4& color);
@@ -38,31 +48,20 @@ private:
                       const glm::vec4& color, float espaciado = 0.0f);
     float anchoTexto(const char* texto, float escala, float espaciado = 0.0f) const;
 
-    // Primitivas derivadas: el shader del HUD solo sabe pintar triangulos
-    // planos, asi que lineas gruesas y anillos se teselan aqui a mano.
-    void dibujarLineaGruesa(float x1, float y1, float x2, float y2,
-                            float grosor, const glm::vec4& color);
-    void dibujarAnillo(float cx, float cy, float radio, float grosor,
-                       const glm::vec4& color, int segmentos = 40);
-
-    void dibujarBoton(const glm::vec4& rect, const char* etiqueta, bool activo, bool resaltado);
-    void dibujarTecla(const glm::vec4& rect, const char* etiqueta, bool presionada);
-
-    // Bloques de mision y telemetria
-    void dibujarBarraProgreso(const Escena& escena, float anchoPantalla, float altoPantalla);
-    void dibujarTextoMision(const EstadoMision& mision, float anchoPantalla, float altoPantalla);
-    void dibujarPanelLateral(const EstadoMision& mision, float anchoPantalla, float altoPantalla);
-    void dibujarMetricas(const Escena& escena, const ContadorRendimiento& metricas,
-                         const Camara& camara, float anchoPantalla, float altoPantalla);
+    // ---- Bloques de la interfaz minima ----
+    void dibujarMarca(float anchoPantalla, float altoPantalla);
+    void dibujarProgreso(const Escena& escena, float anchoPantalla, float altoPantalla);
+    void dibujarControles(float anchoPantalla, float altoPantalla);
+    void dibujarPistaInicial(const Escena& escena, float anchoPantalla, float altoPantalla);
     void dibujarAviso(const Escena& escena, float anchoPantalla, float altoPantalla);
-    void dibujarPanelMedicion(const Escena& escena, float anchoPantalla, float altoPantalla);
-    void dibujarMenuEstado(const Escena& escena, float anchoPantalla, float altoPantalla,
-                           int opcionMenu, int opcionConfiguracion, bool enConfiguracion);
-    void dibujarAdvertencias(const Escena& escena, float anchoPantalla, float altoPantalla);
 
-    // Bloques de identidad y controles
-    void dibujarEsquinas(float anchoPantalla, float altoPantalla);
-    void dibujarClusterTeclas(const EstadoTeclas& teclas, float anchoPantalla, float altoPantalla);
+    // ---- Solo con F3 ----
+    void dibujarPanelDebug(const Escena& escena, const ContadorRendimiento& metricas,
+                           const Camara& camara, float anchoPantalla, float altoPantalla);
+
+    // ---- Menu de configuracion (ESC) ----
+    void dibujarMenu(const Escena& escena, float anchoPantalla, float altoPantalla,
+                     int opcionMenu, int mapaSeleccionado);
 
     GLuint programa = 0;
     GLint  locProyeccion = -1, locModelo = -1, locColor = -1;
@@ -73,6 +72,6 @@ private:
     std::vector<char> bufferTexto;
 
     // Cada rectangulo y cada cadena es una llamada de dibujo: se cuentan aqui
-    // para que la cifra del HUD refleje el coste real y no solo el de la escena.
+    // para que la cifra del panel de debug refleje el coste real.
     int drawCalls = 0;
 };

@@ -24,6 +24,10 @@ public:
     // para normalizar el mundo al cuadrado [-1, 1] del plano.
     void actualizarCurvas(const CurvasNivel& curvas, const LimitesMundo& limites);
 
+    // Rectangulo del panel en pixeles. Vive aqui, y ya no en DisenoHUD, porque
+    // esta vista es su unica consumidora: el HUD en vuelo no lo muestra.
+    static glm::vec4 rectangulo(float anchoPantalla, float altoPantalla);
+
     // Devuelve el numero de draw calls emitidas.
     int dibujar(int anchoPantalla, int altoPantalla);
 

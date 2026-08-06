@@ -23,8 +23,22 @@
 // ============================================================================
 class MapaExploracion {
 public:
+    // Valor que se escribe en una celda explorada.
+    //
+    // Es 255 y no 1 A PROPOSITO: esta misma mascara se sube tal cual como
+    // textura GL_R8, que es un formato NORMALIZADO. Un byte 1 llegaria al
+    // shader como 1/255 = 0.004 -practicamente cero- y el revelado del
+    // minimapa nunca se veria. Con 255 el shader lee exactamente 1.0.
+    // El resto del codigo solo comprueba "distinto de cero", asi que el valor
+    // concreto no cambia ninguna otra logica.
+    static constexpr uint8_t MARCADA = 255;
+
     // Prepara la mascara vacia para una grilla y una caja de mundo dadas.
-    void reiniciar(int ancho, int alto, const LimitesMundo& limites);
+    // 'validez' es la cobertura real del terreno (1 = la celda existe): solo
+    // esas celdas entran en el denominador del porcentaje. Si se pasa vacia se
+    // considera valida toda la grilla.
+    void reiniciar(int ancho, int alto, const LimitesMundo& limites,
+                   const std::vector<uint8_t>& validez = {});
 
     // Marca como exploradas las celdas dentro de un radio en coordenadas de mundo.
     void marcarZona(float x, float z, float radio);
@@ -47,7 +61,8 @@ public:
     std::vector<uint32_t> comprimirRLE() const;
     bool descomprimirRLE(const std::vector<uint32_t>& tiradas, int ancho, int alto);
 
-    std::size_t celdasExploradas() const { return celdasMarcadas; }
+    std::size_t celdasExploradas() const { return celdasMarcadasValidas; }
+    std::size_t celdasValidas()    const { return totalValidas; }
     int obtenerAncho() const { return ancho; }
     int obtenerAlto()  const { return alto; }
     const std::vector<uint8_t>& obtenerMascara() const { return mascara; }
@@ -56,8 +71,13 @@ public:
 
 private:
     std::vector<uint8_t> mascara;
+    // Cobertura del terreno: denominador honesto del porcentaje. Se copia del
+    // Terreno al reiniciar y no cambia mientras dure el mapa.
+    std::vector<uint8_t> validas;
     int ancho = 0, alto = 0;
-    std::size_t celdasMarcadas = 0;
+    std::size_t celdasMarcadas = 0;        // todas, incluidas las de relleno
+    std::size_t celdasMarcadasValidas = 0; // solo las que pertenecen al terreno
+    std::size_t totalValidas = 0;
     LimitesMundo limites;
     std::uint64_t revision = 0;
 };

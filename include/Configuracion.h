@@ -4,8 +4,12 @@
 
 // ============================================================================
 //  Configuracion global del simulador.
-//  Se agrupa aqui para que ajustar el "feeling" (velocidades, escalas, camara)
-//  no obligue a abrir el Modelo, la Vista ni el Controlador.
+//
+//  IMPORTANTE: aqui solo viven constantes que NO dependen del tamano del mapa
+//  (resoluciones, semillas, colores, ritmos de animacion, rutas). Todo lo que
+//  se mide en unidades de mundo -velocidades, alturas, radios, distancias de
+//  camara, planos de recorte- se calcula por terreno en EscalaMundo, para que
+//  la misma proporcion visual valga en cualquier DEM.
 // ============================================================================
 namespace Configuracion {
 
@@ -14,79 +18,81 @@ inline constexpr float ANCHO_OBJETIVO     = 100.0f;  // ancho al que se normaliz
 inline constexpr float EXAGERACION_Y      = 1.0f;    // multiplicador del relieve
 inline constexpr int   PUNTOS_MAX         = 35000;   // tope de la nube de puntos diluida
 inline constexpr int   RESOLUCION_GRILLA  = 256;     // lado del mapa de alturas
-// 129 VERTICES = 128 celdas = 2^7, divisible entre 2^5: es lo que permite que
+// 257 VERTICES = 256 celdas = 2^8, divisible entre 2^5: es lo que permite que
 // el Quadtree de profundidad 5 corte siempre sobre vertices existentes.
-inline constexpr int   RESOLUCION_REJILLA = 129;
+// Se subio de 129 a 257 al reducir la escala del dron: con la camara mucho mas
+// cerca del relieve, la cuadricula anterior se leia gruesa. El quadtree sigue
+// descartando lo que queda fuera del frustum, asi que el coste real apenas sube.
+inline constexpr int   RESOLUCION_REJILLA = 257;
 
-// ---- Atenuacion radial: nitido bajo el dron, oscuro a lo lejos ------------
-// Referencia: el terreno mide ANCHO_OBJETIVO (100) de lado, asi que radios por
-// encima de ~70 dejarian el mapa entero dentro de la zona nitida y la caida no
-// se veria. Estos valores hacen que el borde del mapa ya este casi apagado.
-inline constexpr float RADIO_NITIDO            = 18.0f;
-inline constexpr float RADIO_DESVANECIDO       = 72.0f;
-inline constexpr float ALPHA_REJILLA           = 1.0f;
-// Las estacas aguantan mas lejos que la rejilla, si no el mapa se ve vacio.
-inline constexpr float RADIO_NITIDO_MARCADOR      = 30.0f;
-inline constexpr float RADIO_DESVANECIDO_MARCADOR = 110.0f;
-inline constexpr float ALPHA_MARCADORES        = 0.95f;
+// ---- Proporciones adimensionales (las consume EscalaMundo) ----------------
+// Diagonal del dron / diagonal del terreno. Con 0.0022 sobre un mapa de
+// diagonal ~141 el dron mide ~0.31 unidades: se lee como un objeto pequeno
+// sobre un relieve inmenso, que es la proporcion de referencia.
+inline constexpr float RATIO_DRON_TERRENO     = 0.0022f;
+// Altura de una estaca de sondeo / diagonal del terreno.
+inline constexpr float RATIO_ALTURA_MARCADOR  = 0.0045f;
+
+inline constexpr float ALPHA_REJILLA    = 1.0f;
+inline constexpr float ALPHA_MARCADORES = 0.95f;
 
 // ---- Marcadores de sondeo ----
-inline constexpr int          NUM_MARCADORES        = 44;
-inline constexpr unsigned int SEMILLA_MARCADORES    = 20261u;  // fija = escena reproducible
-inline constexpr float        MARCADOR_ALTURA_MIN   = 2.5f;
-inline constexpr float        MARCADOR_ALTURA_MAX   = 6.5f;
-inline constexpr float        MARCADOR_TAM_CABEZA   = 0.42f;   // lado del cuadrito, en mundo
-inline constexpr float        MARCADOR_PROB_FLOTANTE = 0.18f;
-inline constexpr float        MARCADOR_FLOTE_MAX    = 22.0f;
+inline constexpr int          NUM_MARCADORES     = 44;
+inline constexpr unsigned int SEMILLA_MARCADORES = 20261u;  // fija = escena reproducible
+// Variacion de altura entre estacas, como fraccion de la altura nominal.
+inline constexpr float        MARCADOR_VARIACION = 0.45f;
 
 // ---- Dron ----
-// Mas pequeno que antes a proposito: encoge el dron respecto al terreno y
-// hace que el relieve se lea mas grande en pantalla.
-inline constexpr float TAMANIO_DRON       = 5.0f;
+// El modelo se normaliza a extension maxima 1.0 al cargarlo; la escala real la
+// aplica EscalaMundo sobre la transformada, no sobre la malla, para que un
+// mismo GLB sirva a mapas de tamanos distintos.
+inline constexpr float TAMANIO_DRON       = 1.0f;
 // Umbral del angulo diedro para considerar que una arista es un canto real.
-// Por debajo de ~20 grados empiezan a colarse aristas de superficie lisa.
 inline constexpr float ANGULO_ARISTA_DRON = 26.0f;
-inline constexpr float VEL_DRON           = 50.0f;
-inline constexpr float VEL_ALTURA         = 35.0f;
-inline constexpr float ALTURA_INICIAL     = 18.0f;
-inline constexpr float ACELERACION_DRON   = 5.5f;
-inline constexpr float FRENO_DRON         = 7.5f;
-inline constexpr float ALTURA_MINIMA      = 2.5f;
-inline constexpr float ALTURA_MAXIMA      = 85.0f;
-inline constexpr float MARGEN_MAPA        = 1.5f;
-inline constexpr float INCLINACION_MAX    = 13.0f;
-inline constexpr float GIRO_HELICES       = 18.0f;   // rad/seg
+inline constexpr float INCLINACION_MAX    = 11.0f;   // grados de pitch/roll
+inline constexpr float GIRO_HELICES       = 18.0f;   // rad/seg (solo visual)
 inline constexpr float OFFSET_YAW_DRON    = 0.0f;    // correccion si el modelo mira mal
+// Constantes de tiempo de la interpolacion critica (1/s): mas alto = mas rapido
+// en llegar, nunca sobrepasa porque es exponencial, no elastica.
+inline constexpr float SUAVIZADO_YAW      = 4.5f;
+inline constexpr float SUAVIZADO_INCLINACION = 4.0f;
 
 // ---- Camara orbital ----
 inline constexpr float CAM_YAW_INICIAL    = 45.0f;
-// Angulo bajo, casi a ras del relieve: es lo que da la lectura de "vuelo" en
-// vez de la de mapa visto desde arriba.
-inline constexpr float CAM_ELEV_INICIAL   = 14.0f;
-inline constexpr float CAM_RADIO_INICIAL  = 46.0f;
-// Fraccion de distancia que aun quedaria por recorrer al cabo de 1 segundo.
-inline constexpr float CAM_BASE_SUAVIZADO = 0.001f;
-inline constexpr float CAM_ELEV_MIN       = 8.0f;
+// Ligeramente por encima del dron: es lo que deja ver a la vez el aparato y el
+// terreno que esta barriendo debajo, sin caer en vista cenital.
+inline constexpr float CAM_ELEV_INICIAL   = 24.0f;
+inline constexpr float CAM_BASE_SUAVIZADO = 0.0025f; // fraccion pendiente tras 1 s
+inline constexpr float CAM_ELEV_MIN       = 4.0f;
 inline constexpr float CAM_ELEV_MAX       = 80.0f;
-inline constexpr float CAM_RADIO_MIN      = 22.0f;
-inline constexpr float CAM_RADIO_MAX      = 260.0f;
-inline constexpr float CAM_FOV            = 45.0f;
-inline constexpr float CAM_CERCANO        = 0.1f;
-inline constexpr float CAM_LEJANO         = 1500.0f;
-inline constexpr float CAM_ALTURA_SUELO   = 2.0f;
-inline constexpr float CAM_RADIO_SUPERIOR = 105.0f;
+inline constexpr float CAM_FOV            = 58.0f;   // dentro del rango 50-65 pedido
+inline constexpr float CAM_SENSIBILIDAD   = 0.10f;   // grados por pixel de arrastre
 
 // ---- Ventana ----
-inline constexpr int   ANCHO_VENTANA      = 1280;
-inline constexpr int   ALTO_VENTANA       = 720;
+inline constexpr float FRACCION_VENTANA_X = 0.95f;   // del ancho del monitor
+inline constexpr float FRACCION_VENTANA_Y = 0.92f;   // del alto del monitor
+inline constexpr int   ANCHO_VENTANA_MIN  = 1024;    // reserva si GLFW no da monitor
+inline constexpr int   ALTO_VENTANA_MIN   = 640;
 
 // ---- Escaneo / niebla de guerra ----
-inline constexpr float RADIO_ESCANEO           = 14.0f;  // unidades de mundo
-inline constexpr int   CELDAS_POR_FRAME        = 256;    // lote que desencola el sistema
+// Lote que desencola el sistema. Al doblar el radio del radar el area (y por
+// tanto la cola inicial) se multiplica por cuatro: con un lote mayor el barrido
+// se resuelve en pocos frames en vez de arrastrarse.
+inline constexpr int   CELDAS_POR_FRAME        = 2048;
 inline constexpr float UMBRAL_MISION_COMPLETA  = 0.995f;
 inline constexpr float DURACION_FADE_PANEL     = 1.2f;   // segundos
 inline constexpr int   NUM_PUNTOS_ESCANEO      = 10;
 inline constexpr unsigned int SEMILLA_ESCANEO  = 42631u;
+
+// ---- Luz de escaneo bajo el dron ----
+inline constexpr int   SEGMENTOS_CONO   = 40;
+inline constexpr int   ANILLOS_RADAR    = 3;
+inline constexpr float PERIODO_ANILLO   = 2.4f;   // segundos que tarda en expandirse
+inline constexpr float PERIODO_PULSO    = 1.6f;   // respiracion del cono
+// Bajo a proposito: el cono se ve desde delante y desde detras a la vez y la
+// mezcla aditiva suma ambas caras. Con mas alpha deja de leerse como luz.
+inline constexpr float ALPHA_CONO       = 0.17f;  // en el vertice, bajo el dron
+inline constexpr float ALPHA_HUELLA     = 0.60f;  // centro de la elipse proyectada
 
 // ---- Curvas de nivel ----
 inline constexpr int   NIVELES_CURVAS    = 12;
@@ -95,8 +101,6 @@ inline constexpr float INTERVALO_CURVAS  = 0.2f;  // regeneracion como mucho cad
 
 // ---- Quadtree LOD + culling ----
 inline constexpr int   PROFUNDIDAD_QUADTREE = 5;
-// Un cuadrante deja de subdividirse cuando su distancia al dron supera este
-// factor por su propio lado. Mas alto = mas detalle lejos y mas draw calls.
 inline constexpr float FACTOR_LOD           = 1.6f;
 inline constexpr float INTERVALO_FPS        = 0.5f;   // ventana de promediado
 
@@ -110,6 +114,10 @@ inline constexpr float INTENSIDAD_GLOW             = 0.95f;
 inline const std::string TITULO_APP    = "GEODRONE";
 inline const std::string SUBTITULO_APP = "EXPLORACION TOPOGRAFICA";
 inline const std::string PIE_PROYECTO  = "UANCV / COMPUTACION GRAFICA SIS226";
+
+// ---- Aviso inicial ----
+inline constexpr float DURACION_PISTA_INICIAL = 5.0f;  // segundos visible
+inline constexpr float FADE_PISTA_INICIAL     = 1.5f;  // segundos de desvanecido
 
 // ---- Persistencia ----
 inline constexpr float DURACION_AVISO = 2.6f;   // segundos que dura el mensaje
@@ -135,4 +143,7 @@ inline const glm::vec3 BLANCO       {0.95f, 0.98f, 1.00f};
 inline const glm::vec3 CIAN         {0.10f, 0.88f, 0.92f};
 inline const glm::vec3 VERDE        {0.20f, 0.92f, 0.58f};
 inline const glm::vec3 ALERTA       {1.00f, 0.34f, 0.20f};
+// Luz del escaner: blanco calido, no amarillo saturado, para que se lea como
+// luz proyectada y no como geometria solida.
+inline const glm::vec3 LUZ_ESCANER  {1.00f, 0.95f, 0.72f};
 } // namespace Paleta

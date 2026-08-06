@@ -2,11 +2,29 @@
 #include "CargadorModelos.h"
 #include "Configuracion.h"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 
 namespace fs = std::filesystem;
+
+namespace {
+// Diagonal del bounding box de una malla ya normalizada. El cargador deja el
+// dron con extension maxima 1.0, asi que este valor cae entre 1.0 y sqrt(3).
+float diagonalDe(const MallaCruda& malla) {
+    if (malla.vacia() || malla.floatsPorVertice < 3) return 1.0f;
+    glm::vec3 minimo(1e9f), maximo(-1e9f);
+    for (std::size_t i = 0; i + 2 < malla.vertices.size(); i += malla.floatsPorVertice) {
+        glm::vec3 p(malla.vertices[i], malla.vertices[i + 1], malla.vertices[i + 2]);
+        minimo = glm::min(minimo, p);
+        maximo = glm::max(maximo, p);
+    }
+    float d = glm::length(maximo - minimo);
+    return (d > 1e-4f) ? d : 1.0f;
+}
+}
 
 Escena::Escena() = default;
 
@@ -30,6 +48,7 @@ bool Escena::inicializar() {
             Configuracion::RUTA_DRON, mallaDron, pivotesHelices, Configuracion::TAMANIO_DRON);
     }
     if (!dronCargado) std::cerr << "AVISO: no se cargo el dron\n";
+    diagonalMallaDron = diagonalDe(mallaDron);
 
     construirGrafo();
     construirEntidades();
@@ -38,8 +57,19 @@ bool Escena::inicializar() {
         estadoAplicacion = EstadoAplicacion::Error;
         return false;
     }
-    estadoAplicacion = EstadoAplicacion::Intro;
+    // Se entra DIRECTAMENTE a volar: no hay menu inicial que navegar. La pista
+    // "WASD PARA INICIAR LA EXPLORACION" se dibuja unos segundos y se apaga.
+    estadoAplicacion = EstadoAplicacion::Playing;
+    tiempoDesdeInicio = 0.0f;
     return true;
+}
+
+float Escena::obtenerAlphaPistaInicial() const {
+    const float visible = Configuracion::DURACION_PISTA_INICIAL;
+    const float fade    = Configuracion::FADE_PISTA_INICIAL;
+    if (tiempoDesdeInicio >= visible + fade) return 0.0f;
+    if (tiempoDesdeInicio <= visible) return 1.0f;
+    return 1.0f - (tiempoDesdeInicio - visible) / fade;
 }
 
 void Escena::construirGrafo() {
@@ -93,8 +123,9 @@ void Escena::construirEntidades() {
     auto* animDron = entidadDron.agregarComponente<ComponenteAnimacion>();
     animDron->velocidadGiro = Configuracion::GIRO_HELICES;
 
+    // El radio real lo fija cargarMapa() a partir de EscalaMundo; aqui solo se
+    // crea el componente.
     auto* escaner = entidadDron.agregarComponente<ComponenteEscaner>();
-    escaner->radioEscaneo   = Configuracion::RADIO_ESCANEO;
     escaner->celdasPorFrame = Configuracion::CELDAS_POR_FRAME;
 }
 
@@ -112,6 +143,11 @@ bool Escena::cargarMapa(int indice) {
         return false;
     }
 
+    // ---- Escala del mundo: TODO lo demas se deriva de aqui -----------------
+    // Se recalcula por mapa, antes de sembrar nada, porque marcadores, escaner,
+    // camara y vuelo dependen de ella.
+    escala = EscalaMundo::calcular(terreno, diagonalMallaDron);
+
     // La malla cambio de contenido: la Vista debe volver a subirla a la GPU.
     if (auto* comp = entidadTerreno.obtenerComponente<ComponenteMalla>()) {
         comp->malla = &terreno.obtenerMalla();
@@ -119,25 +155,35 @@ bool Escena::cargarMapa(int indice) {
         comp->dirty = true;
     }
 
-    // Niebla de guerra limpia para el nuevo mapa.
+    // El dron NO cambia de malla entre mapas: cambia su escala en la
+    // transformada, para que la proporcion dron/terreno sea la misma en todos.
+    if (auto* trans = entidadDron.obtenerComponente<ComponenteTransformada>())
+        trans->escala = glm::vec3(escala.escalaDron);
+    if (auto* escaner = entidadDron.obtenerComponente<ComponenteEscaner>())
+        escaner->radioEscaneo = escala.radioEscaneo;
+
+    // Niebla de guerra limpia para el nuevo mapa. El cambio de mapa reinicia el
+    // progreso: la mascara vuelve a cero y con ella el porcentaje.
     mapaExploracion.reiniciar(terreno.obtenerAnchoGrilla(), terreno.obtenerAnchoGrilla(),
-                              terreno.obtenerLimites());
+                              terreno.obtenerLimites(), terreno.obtenerCobertura());
     sistemaEscaneo.reiniciar(terreno.obtenerAnchoGrilla(), terreno.obtenerAnchoGrilla());
     estadoMision.reiniciar();
     generadorCurvas.reiniciar();
     curvas.limpiar();
     curvas.establecerRango(terreno.obtenerLimites().minY, terreno.obtenerLimites().maxY);
     curvasSucias = true;   // el panel debe vaciarse al cambiar de mapa
+    misionAnunciada = false;
 
     // Estacas resembradas con la misma semilla: cada mapa tiene su propio
     // patron, pero siempre el mismo entre ejecuciones.
-    marcadores.generar(terreno, Configuracion::NUM_MARCADORES, Configuracion::SEMILLA_MARCADORES);
-    sistemaExploracion.generar(terreno, Configuracion::NUM_PUNTOS_ESCANEO,
+    marcadores.generar(terreno, escala, Configuracion::NUM_MARCADORES,
+                       Configuracion::SEMILLA_MARCADORES);
+    sistemaExploracion.generar(terreno, escala, Configuracion::NUM_PUNTOS_ESCANEO,
                                Configuracion::SEMILLA_ESCANEO + static_cast<unsigned int>(indice));
     sistemaMedicion.limpiar();
 
     // Dron al centro del mapa, a una altura segura sobre el relieve.
-    dron.establecerPosicion(glm::vec3(0.0f, terreno.alturaEn(0.0f, 0.0f) + Configuracion::ALTURA_INICIAL, 0.0f));
+    dron.establecerPosicion(glm::vec3(0.0f, terreno.alturaEn(0.0f, 0.0f) + escala.alturaInicial, 0.0f));
     dron.establecerYaw(0.0f);
     if (estadoAplicacion != EstadoAplicacion::Loading)
         estadoAplicacion = EstadoAplicacion::Playing;
@@ -146,6 +192,25 @@ bool Escena::cargarMapa(int indice) {
 
 bool Escena::reiniciarMision() {
     return cargarMapa(mapaActual);
+}
+
+void Escena::reiniciarEscaneo() {
+    if (!terreno.estaCargado()) return;
+
+    // Mascara a cero, con la misma cobertura valida del terreno actual.
+    mapaExploracion.reiniciar(terreno.obtenerAnchoGrilla(), terreno.obtenerAnchoGrilla(),
+                              terreno.obtenerLimites(), terreno.obtenerCobertura());
+    // La cola del escaner guarda celdas que ya no tienen sentido: se vacia.
+    sistemaEscaneo.reiniciar(terreno.obtenerAnchoGrilla(), terreno.obtenerAnchoGrilla());
+    sistemaExploracion.reiniciar();
+    estadoMision.reiniciar();
+
+    // Las curvas se derivan de la mascara: hay que rehacerlas desde cero.
+    generadorCurvas.reiniciar();
+    curvas.limpiar();
+    curvasSucias = true;
+    misionAnunciada = false;
+    std::cout << "[SCAN] Exploracion reiniciada sobre el mismo terreno\n";
 }
 
 void Escena::mostrarAviso(const std::string& texto) {
@@ -178,6 +243,9 @@ bool Escena::aplicarGuardado(const std::string& nombreMapa,
     estadoMision.reiniciar();
     curvas.limpiar();
     curvasSucias = true;
+    // Una partida restaurada puede venir ya al 100%: el aviso debe poder
+    // volver a dispararse en vez de quedar consumido por la sesion anterior.
+    misionAnunciada = false;
 
     dron.establecerPosicion(posicionDron);
     dron.establecerYaw(yawDron);
@@ -186,12 +254,17 @@ bool Escena::aplicarGuardado(const std::string& nombreMapa,
 
 void Escena::actualizar(float dt) {
     aviso.actualizar(dt);
+    tiempoDesdeInicio += dt;
     const bool jugando = estadoAplicacion == EstadoAplicacion::Playing;
-    if (jugando) dron.actualizar(terreno, dt);
+    if (jugando) dron.actualizar(terreno, escala, dt);
 
     // Modelo -> componente transformada -> nodo del grafo.
+    // La posicion es EXACTAMENTE la del Modelo: no se le suma ninguna
+    // flotacion ni oscilacion visual, para que soltar las teclas signifique
+    // quedarse quieto de verdad. El giro de las helices vive en el vertex
+    // shader y no toca esta transformada.
     if (auto* trans = entidadDron.obtenerComponente<ComponenteTransformada>()) {
-        trans->posicion      = dron.obtenerPosicion() + glm::vec3(0.0f, dron.obtenerFlotacion(), 0.0f);
+        trans->posicion      = dron.obtenerPosicion();
         trans->rotacionEuler = glm::vec3(dron.obtenerPitch(), dron.obtenerYaw(), dron.obtenerRoll());
         trans->volcarAlNodo();
     }
@@ -211,10 +284,17 @@ void Escena::actualizar(float dt) {
     }
     if (jugando) {
         sistemaExploracion.actualizar(dron.obtenerPosicion(), dron.obtenerRapidez(),
-                                      dt, mapaExploracion);
-        estadoMision.actualizar(sistemaExploracion.obtenerProgresoPuntos(), dt);
-        if (sistemaExploracion.estaCompleta()) {
-            estadoAplicacion = EstadoAplicacion::MissionComplete;
+                                      escala, dt, mapaExploracion);
+        // El progreso que manda ahora es la COBERTURA REAL del terreno, no los
+        // puntos de sondeo: es lo que ve el jugador en el minimapa.
+        estadoMision.actualizar(mapaExploracion.porcentajeExplorado(), dt);
+
+        // Completar el mapa no interrumpe el vuelo con una pantalla modal: solo
+        // se anuncia una vez y se sigue volando.
+        if (!misionAnunciada &&
+            mapaExploracion.porcentajeExplorado() >= Configuracion::UMBRAL_MISION_COMPLETA) {
+            misionAnunciada = true;
+            mostrarAviso("AREA CARTOGRAFIADA AL 100%");
             std::cout << "[MISSION] Exploracion completada en "
                       << sistemaExploracion.obtenerTiempoMision() << " segundos\n";
         }

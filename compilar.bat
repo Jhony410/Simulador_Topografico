@@ -18,6 +18,7 @@ g++ ^
  "src\NodoEscena.cpp" ^
  "src\Terreno.cpp" ^
  "src\Dron.cpp" ^
+ "src\EscalaMundo.cpp" ^
  "src\MapaExploracion.cpp" ^
  "src\CurvasNivel.cpp" ^
  "src\MarcadoresSondeo.cpp" ^
@@ -44,6 +45,7 @@ g++ ^
  "src\VistaMarcadores.cpp" ^
  "src\VistaExploracion.cpp" ^
  "src\VistaDron.cpp" ^
+ "src\VistaEscaner.cpp" ^
  "src\VistaCurvas.cpp" ^
  "src\VistaMinimapa.cpp" ^
  "src\VistaHUD.cpp" ^

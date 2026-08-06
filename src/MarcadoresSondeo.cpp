@@ -1,5 +1,6 @@
 #include "MarcadoresSondeo.h"
 #include "Configuracion.h"
+#include "EscalaMundo.h"
 #include "Terreno.h"
 
 #include <random>
@@ -10,7 +11,8 @@ void MarcadoresSondeo::limpiar() {
     bvh.limpiar();
 }
 
-void MarcadoresSondeo::generar(const Terreno& terreno, int cantidad, unsigned int semilla) {
+void MarcadoresSondeo::generar(const Terreno& terreno, const EscalaMundo& escala,
+                               int cantidad, unsigned int semilla) {
     limpiar();
     if (cantidad <= 0 || !terreno.estaCargado()) return;
     marcadores.reserve(cantidad);
@@ -33,26 +35,25 @@ void MarcadoresSondeo::generar(const Terreno& terreno, int cantidad, unsigned in
         float z = lim.minZ + margenZ + aleatorio() * (lim.profundidad() - 2.0f * margenZ);
 
         MarcadorSondeo m;
+        // La base es la SUPERFICIE REAL en ese (x, z): sin sumandos arbitrarios
+        // y sin probabilidad de flotar. En una pendiente la torreta nace pegada
+        // al relieve porque alturaEn() interpola bilinealmente el heightmap.
         m.base = glm::vec3(x, terreno.alturaEn(x, z), z);
 
-        // Una parte de las estacas se despega del suelo: da sensacion de
-        // sondeos aereos y rompe la monotonia de tenerlas todas pegadas.
-        if (aleatorio() < Configuracion::MARCADOR_PROB_FLOTANTE)
-            m.base.y += aleatorio() * Configuracion::MARCADOR_FLOTE_MAX;
-
-        m.altura = Configuracion::MARCADOR_ALTURA_MIN +
-                   aleatorio() * (Configuracion::MARCADOR_ALTURA_MAX - Configuracion::MARCADOR_ALTURA_MIN);
+        // Variacion moderada alrededor de la altura nominal de la escala, para
+        // que el campo de torretas no parezca clonado.
+        float variacion = 1.0f + (aleatorio() * 2.0f - 1.0f) * Configuracion::MARCADOR_VARIACION;
+        m.altura = escala.alturaMarcador * variacion;
+        m.ancho  = escala.anchoMarcador;
         marcadores.push_back(m);
     }
 
-    // Caja de cada estaca: el poste mas un margen lateral para la cabeza, que
-    // es un billboard y ocupa sitio en cualquier direccion.
-    const float margen = Configuracion::MARCADOR_TAM_CABEZA;
+    // Caja de cada torreta: el mastil mas su propio ancho a los lados.
     cajas.reserve(marcadores.size());
     for (const auto& m : marcadores) {
         AABB caja;
-        caja.expandir(m.base - glm::vec3(margen, 0.0f, margen));
-        caja.expandir(m.base + glm::vec3(margen, m.altura + margen, margen));
+        caja.expandir(m.base - glm::vec3(m.ancho, 0.0f, m.ancho));
+        caja.expandir(m.base + glm::vec3(m.ancho, m.altura + m.ancho, m.ancho));
         cajas.push_back(caja);
     }
     bvh.construir(cajas);

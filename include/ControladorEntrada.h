@@ -11,8 +11,12 @@ class Camara;
 
 // ============================================================================
 //  CONTROLADOR: traduce teclado y mouse a cambios en el MODELO.
-//  No crea ni toca un solo buffer de GPU; para el hit-test de los botones usa
-//  DisenoHUD, que es geometria pura en pixeles.
+//  No crea ni toca un solo buffer de GPU.
+//
+//  El vuelo se resuelve en procesarEntradaContinua(): cada frame se lee el
+//  estado de las teclas y se entrega al Dron una DIRECCION deseada (y un eje
+//  vertical), nunca un desplazamiento ya integrado. Si no hay tecla pulsada, la
+//  direccion es el vector nulo y el Dron frena hasta detenerse por completo.
 // ============================================================================
 class ControladorEntrada {
 public:
@@ -28,12 +32,21 @@ public:
     bool hayCambioDeMapaPendiente() const { return cambioMapaPendiente; }
     int  consumirCambioDeMapa();
 
-    // Tamaño de ventana vigente, actualizado por el callback de framebuffer.
+    // Peticion pendiente de alternar pantalla completa (la resuelve la
+    // Aplicacion: es ella quien posee la ventana y el monitor).
+    bool consumirAlternarPantallaCompleta() {
+        bool s = alternarPantallaCompleta; alternarPantallaCompleta = false; return s;
+    }
+
+    // ---- Menu de configuracion (ESC) ----
+    // La Vista necesita saber que fila esta resaltada y que mapa hay elegido
+    // en la fila de seleccion de terreno.
+    int obtenerOpcionMenu()     const { return opcionMenu; }
+    int obtenerMapaSeleccionado() const { return mapaSeleccionado; }
+
+    // Tamano de ventana vigente, actualizado por el callback de framebuffer.
     int obtenerAncho() const { return anchoPantalla; }
     int obtenerAlto()  const { return altoPantalla; }
-    int obtenerOpcionMenu() const { return opcionMenu; }
-    int obtenerOpcionConfiguracion() const { return opcionConfiguracion; }
-    bool estaEnConfiguracion() const { return enConfiguracion; }
 
 private:
     // Callbacks de GLFW: recuperan la instancia via glfwGetWindowUserPointer.
@@ -47,8 +60,11 @@ private:
     void manejarMovimientoMouse(double x, double y);
     void manejarTecla(int tecla, int accion);
     void seleccionarMedicion(double x, double y);
+
+    // Navegacion del menu de configuracion. Devuelve true si consumio la tecla.
+    bool manejarTeclaMenu(int tecla);
+    void abrirMenu();
     void ejecutarOpcionMenu();
-    void ajustarConfiguracion(int direccion);
 
     GLFWwindow* ventana = nullptr;
     Escena*     escena  = nullptr;
@@ -62,9 +78,10 @@ private:
 
     bool cambioMapaPendiente = false;
     int  mapaSolicitado = 0;
+    bool alternarPantallaCompleta = false;
+
+    int  opcionMenu = 0;
+    int  mapaSeleccionado = 0;   // fila "TERRENO": se aplica al confirmar
 
     int anchoPantalla = 1280, altoPantalla = 720;
-    int opcionMenu = 0;
-    int opcionConfiguracion = 0;
-    bool enConfiguracion = false;
 };

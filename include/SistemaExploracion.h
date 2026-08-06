@@ -6,13 +6,25 @@
 
 class MapaExploracion;
 class Terreno;
+struct EscalaMundo;
 
+// ============================================================================
+//  MODELO: puntos de sondeo opcionales repartidos por el terreno.
+//
+//  Ya NO son la fuente del porcentaje de exploracion (eso lo lleva la mascara
+//  de MapaExploracion, que crece sola al sobrevolar). Aqui quedan como hitos
+//  de interes: al completarse revelan de golpe la zona que los rodea.
+//
+//  Todos sus radios y tolerancias salen de EscalaMundo, no de constantes en
+//  unidades de mundo, para que funcionen igual en cualquier mapa.
+// ============================================================================
 class SistemaExploracion {
 public:
-    void generar(const Terreno& terreno, int cantidad, unsigned int semilla);
+    void generar(const Terreno& terreno, const EscalaMundo& escala,
+                 int cantidad, unsigned int semilla);
     void reiniciar();
     void actualizar(const glm::vec3& posicionDron, float velocidadDron,
-                    float dt, MapaExploracion& mapa);
+                    const EscalaMundo& escala, float dt, MapaExploracion& mapa);
 
     const std::vector<PuntoEscaneo>& obtenerPuntos() const { return puntos; }
     int obtenerCompletados() const { return completados; }

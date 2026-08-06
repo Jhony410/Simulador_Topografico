@@ -1,6 +1,7 @@
 #include "VistaExploracion.h"
 #include "Configuracion.h"
 #include "GestorRecursos.h"
+#include "MapaExploracion.h"
 #include "Terreno.h"
 
 #include <cmath>
@@ -46,9 +47,28 @@ void VistaExploracion::inicializar(GestorRecursos& recursos) {
 
 int VistaExploracion::dibujar(const Camara& camara, const Terreno& terreno,
                               const SistemaExploracion& exploracion,
+                              const MapaExploracion& mapa,
                               const SistemaMedicion& medicion, const Ajustes& ajustes,
+                              const EscalaMundo& escala,
                               const glm::vec3& posicionDron, float aspecto, float tiempo) {
     if (!vao) return 0;
+
+    // Una guia solo se dibuja si su celda ya esta explorada o si el radar la
+    // esta alcanzando ahora mismo: en zona oscura no debe haber nada visible.
+    auto estaRevelada = [&](const glm::vec3& p) {
+        int cx = 0, cz = 0;
+        mapa.mundoACelda(p.x, p.z, cx, cz);
+        if (mapa.estaExplorada(cx, cz)) return true;
+        return glm::length(glm::vec2(p.x - posicionDron.x, p.z - posicionDron.z))
+               <= escala.radioEscaneo * 1.25f;
+    };
+
+    // Todas las guias se dimensionan contra la escala del terreno: un mastil de
+    // sondeo mide lo mismo que una torreta, no 7 unidades fijas.
+    const float alturaMastil    = escala.alturaMarcador * 1.6f;
+    const float alturaCompletado = escala.alturaMarcador * 0.7f;
+    const float brazoCruz       = escala.alturaMarcador * 0.22f;
+    const float offsetSuelo     = escala.alturaSegura * 0.05f;
     std::vector<VerticeGuia> lineas;
     std::vector<VerticeGuia> puntos;
     lineas.reserve(2048);
@@ -59,18 +79,20 @@ int VistaExploracion::dibujar(const Camara& camara, const Terreno& terreno,
     };
 
     for (const PuntoEscaneo& p : exploracion.obtenerPuntos()) {
+        if (!estaRevelada(p.posicion)) continue;
         glm::vec4 color = colorEstado(p.estado);
         float pulso = 1.0f + ((p.estado == EstadoPuntoEscaneo::Cercano ||
                               p.estado == EstadoPuntoEscaneo::Escaneando)
                              ? 0.12f * std::sin(tiempo * 5.0f + p.id) : 0.0f);
-        glm::vec3 base = p.posicion + glm::vec3(0.0f, 0.12f, 0.0f);
-        float altura = p.estado == EstadoPuntoEscaneo::Completado ? 3.0f : 7.5f;
+        // La base se apoya en la superficie: el mastil crece DESDE el terreno.
+        glm::vec3 base = p.posicion + glm::vec3(0.0f, offsetSuelo, 0.0f);
+        float altura = p.estado == EstadoPuntoEscaneo::Completado ? alturaCompletado : alturaMastil;
         linea(base, base + glm::vec3(0.0f, altura, 0.0f), color);
-        float cruz = 0.48f * pulso;
+        float cruz = brazoCruz * pulso;
         glm::vec3 cima = base + glm::vec3(0.0f, altura, 0.0f);
         linea(cima - glm::vec3(cruz, 0, 0), cima + glm::vec3(cruz, 0, 0), color);
         linea(cima - glm::vec3(0, 0, cruz), cima + glm::vec3(0, 0, cruz), color);
-        puntos.push_back({cima, color, p.estado == EstadoPuntoEscaneo::Escaneando ? 8.0f : 6.0f});
+        puntos.push_back({cima, color, p.estado == EstadoPuntoEscaneo::Escaneando ? 7.0f : 5.0f});
 
         int segmentos = 48;
         int visibles = p.estado == EstadoPuntoEscaneo::Escaneando
@@ -83,11 +105,11 @@ int VistaExploracion::dibujar(const Camara& camara, const Terreno& terreno,
             float a1 = 6.283185307f * (i + 1) / segmentos;
             glm::vec3 q0(base.x + std::cos(a0) * radio,
                          terreno.alturaEn(base.x + std::cos(a0) * radio,
-                                          base.z + std::sin(a0) * radio) + 0.16f,
+                                          base.z + std::sin(a0) * radio) + offsetSuelo,
                          base.z + std::sin(a0) * radio);
             glm::vec3 q1(base.x + std::cos(a1) * radio,
                          terreno.alturaEn(base.x + std::cos(a1) * radio,
-                                          base.z + std::sin(a1) * radio) + 0.16f,
+                                          base.z + std::sin(a1) * radio) + offsetSuelo,
                          base.z + std::sin(a1) * radio);
             linea(q0, q1, colorAnillo);
         }
@@ -101,7 +123,7 @@ int VistaExploracion::dibujar(const Camara& camara, const Terreno& terreno,
         for (int i = 1; i <= tramos; ++i) {
             float t = static_cast<float>(i) / tramos;
             glm::vec3 actual = glm::mix(posicionDron, destino, t);
-            actual.y = std::max(actual.y, terreno.alturaEn(actual.x, actual.z) + 1.0f);
+            actual.y = std::max(actual.y, terreno.alturaEn(actual.x, actual.z) + escala.alturaSegura);
             if ((i / 2) % 2 == 0) linea(anterior, actual, ruta);
             anterior = actual;
         }
@@ -111,10 +133,10 @@ int VistaExploracion::dibujar(const Camara& camara, const Terreno& terreno,
         const auto& medidos = medicion.obtenerPuntos();
         glm::vec4 c(Paleta::CIAN, 0.96f);
         for (std::size_t i = 0; i < medidos.size(); ++i) {
-            puntos.push_back({medidos[i] + glm::vec3(0, 0.18f, 0), c, 9.0f});
-            linea(medidos[i], medidos[i] + glm::vec3(0, 2.0f, 0), c);
-            if (i > 0) linea(medidos[i - 1] + glm::vec3(0, 0.22f, 0),
-                             medidos[i] + glm::vec3(0, 0.22f, 0), c);
+            puntos.push_back({medidos[i] + glm::vec3(0, offsetSuelo, 0), c, 9.0f});
+            linea(medidos[i], medidos[i] + glm::vec3(0, alturaCompletado, 0), c);
+            if (i > 0) linea(medidos[i - 1] + glm::vec3(0, offsetSuelo * 1.4f, 0),
+                             medidos[i] + glm::vec3(0, offsetSuelo * 1.4f, 0), c);
         }
     }
 

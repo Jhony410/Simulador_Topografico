@@ -2,6 +2,7 @@
 #include "CargadorModelos.h"
 #include "Configuracion.h"
 #include "Dron.h"
+#include "EscalaMundo.h"
 #include "MapaExploracion.h"
 #include "SistemaExploracion.h"
 #include "SistemaMedicion.h"
@@ -33,32 +34,78 @@ int validarModelos(bool probarLogica) {
         if (!std::isfinite(centro)) { std::cerr << "[FAIL] Altura no finita\n"; ++fallos; }
 
         if (probarLogica) {
+            // La escala del mundo se calcula igual que en la aplicacion real:
+            // con la diagonal del dron ya normalizado (extension maxima 1).
+            EscalaMundo escala = EscalaMundo::calcular(terreno, 1.4f);
+
             MapaExploracion mapa;
-            mapa.reiniciar(terreno.obtenerAnchoGrilla(), terreno.obtenerAnchoGrilla(), terreno.obtenerLimites());
+            mapa.reiniciar(terreno.obtenerAnchoGrilla(), terreno.obtenerAnchoGrilla(),
+                           terreno.obtenerLimites(), terreno.obtenerCobertura());
             SistemaExploracion exploracion;
-            exploracion.generar(terreno, Configuracion::NUM_PUNTOS_ESCANEO,
+            exploracion.generar(terreno, escala, Configuracion::NUM_PUNTOS_ESCANEO,
                                 Configuracion::SEMILLA_ESCANEO + static_cast<unsigned int>(i));
             std::vector<glm::vec3> objetivos;
             for (const auto& p : exploracion.obtenerPuntos()) objetivos.push_back(p.posicion);
             for (glm::vec3 p : objetivos) {
-                p.y += 10.0f;
+                p.y += escala.alturaSegura * 2.0f;
                 for (int frame = 0; frame < 210; ++frame)
-                    exploracion.actualizar(p, 0.0f, 1.0f / 60.0f, mapa);
+                    exploracion.actualizar(p, 0.0f, escala, 1.0f / 60.0f, mapa);
             }
             if (!objetivos.empty() && !exploracion.estaCompleta()) {
                 std::cerr << "[FAIL] La mision no completa sus zonas\n";
                 ++fallos;
             }
 
+            // ---- Colision vertical: el dron nunca debe quedar bajo el relieve.
             Dron dron;
             dron.establecerPosicion(glm::vec3(terreno.obtenerLimites().maxX + 20.0f,
                                                terreno.obtenerLimites().minY - 20.0f,
                                                terreno.obtenerLimites().maxZ + 20.0f));
-            dron.mover(glm::vec3(0.0f), 0.0f, 1.0f / 60.0f);
-            dron.actualizar(terreno, 1.0f / 60.0f);
+            dron.mover(glm::vec3(0.0f));
+            dron.ajustarAltura(0.0f);
+            dron.actualizar(terreno, escala, 1.0f / 60.0f);
             const glm::vec3& dp = dron.obtenerPosicion();
-            if (dp.y + 1e-4f < terreno.alturaEn(dp.x, dp.z) + Configuracion::ALTURA_MINIMA) {
+            if (dp.y + 1e-4f < terreno.alturaEn(dp.x, dp.z) + escala.alturaSegura) {
                 std::cerr << "[FAIL] Colision vertical del dron\n";
+                ++fallos;
+            }
+
+            // ---- Inmovilidad: sin entrada, la posicion no puede cambiar -----
+            // Se acelera 1 s, se suelta 3 s y se comprueba que despues de otro
+            // segundo el dron esta EXACTAMENTE donde quedo (velocidad cero).
+            Dron quieto;
+            quieto.establecerPosicion(glm::vec3(0.0f,
+                terreno.alturaEn(0.0f, 0.0f) + escala.alturaInicial, 0.0f));
+            for (int f = 0; f < 60; ++f) {
+                quieto.mover(glm::vec3(1.0f, 0.0f, 0.0f));
+                quieto.ajustarAltura(0.0f);
+                quieto.actualizar(terreno, escala, 1.0f / 60.0f);
+            }
+            for (int f = 0; f < 180; ++f) {
+                quieto.mover(glm::vec3(0.0f));
+                quieto.ajustarAltura(0.0f);
+                quieto.actualizar(terreno, escala, 1.0f / 60.0f);
+            }
+            glm::vec3 reposo = quieto.obtenerPosicion();
+            if (quieto.obtenerRapidez() != 0.0f) {
+                std::cerr << "[FAIL] Velocidad residual tras frenar: "
+                          << quieto.obtenerRapidez() << "\n";
+                ++fallos;
+            }
+            for (int f = 0; f < 60; ++f) {
+                quieto.mover(glm::vec3(0.0f));
+                quieto.ajustarAltura(0.0f);
+                quieto.actualizar(terreno, escala, 1.0f / 60.0f);
+            }
+            if (glm::length(quieto.obtenerPosicion() - reposo) != 0.0f) {
+                std::cerr << "[FAIL] El dron se desplaza sin entrada del usuario\n";
+                ++fallos;
+            }
+
+            // ---- Escala: el dron debe ser diminuto frente al terreno --------
+            float ratio = (escala.escalaDron * 1.4f) / escala.diagonalTerreno;
+            if (ratio > 0.006f || ratio < 0.0005f) {
+                std::cerr << "[FAIL] Proporcion dron/terreno fuera de rango: " << ratio << "\n";
                 ++fallos;
             }
 

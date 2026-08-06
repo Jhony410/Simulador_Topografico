@@ -1,4 +1,5 @@
 #include "SistemaExploracion.h"
+#include "EscalaMundo.h"
 #include "MapaExploracion.h"
 #include "Terreno.h"
 
@@ -9,13 +10,12 @@
 #include <random>
 
 namespace {
-constexpr float RADIO_CERCANO = 11.0f;
 constexpr float DURACION_ESCANEO = 3.0f;
-constexpr float VELOCIDAD_MAX_ESCANEO = 14.0f;
 constexpr float DISTANCIA_MINIMA_RELATIVA = 0.16f;
 }
 
-void SistemaExploracion::generar(const Terreno& terreno, int cantidad, unsigned int semilla) {
+void SistemaExploracion::generar(const Terreno& terreno, const EscalaMundo& escala,
+                                 int cantidad, unsigned int semilla) {
     puntos.clear();
     completados = 0;
     objetivoActual = -1;
@@ -53,7 +53,9 @@ void SistemaExploracion::generar(const Terreno& terreno, int cantidad, unsigned 
         PuntoEscaneo punto;
         punto.id = static_cast<int>(puntos.size()) + 1;
         punto.posicion = glm::vec3(x, h, z);
-        punto.radio = std::max(4.0f, std::min(lim.ancho(), lim.profundidad()) * 0.055f);
+        // El radio de una zona de sondeo se mide contra la escala del mundo,
+        // no en unidades absolutas.
+        punto.radio = escala.radioEscaneo * 0.9f;
         puntos.push_back(punto);
     }
 
@@ -86,8 +88,16 @@ int SistemaExploracion::buscarObjetivoMasCercano(const glm::vec3& posicion) cons
 }
 
 void SistemaExploracion::actualizar(const glm::vec3& posicionDron, float velocidadDron,
-                                    float dt, MapaExploracion& mapa) {
+                                    const EscalaMundo& escala, float dt,
+                                    MapaExploracion& mapa) {
     if (dt <= 0.0f || puntos.empty()) return;
+
+    // Tolerancias derivadas de la escala del terreno activo.
+    const float radioCercano       = escala.radioEscaneo * 1.7f;
+    const float velocidadMaxEscaneo = escala.velocidadMaxima * 0.9f;
+    const float alturaMinimaEscaneo = escala.alturaSegura * 1.2f;
+    const float alturaMaximaEscaneo = escala.alturaMaxima * 0.7f;
+
     tiempoMision += dt;
     if (tienePosicionAnterior)
         distanciaRecorrida += glm::length(posicionDron - posicionAnterior);
@@ -102,22 +112,27 @@ void SistemaExploracion::actualizar(const glm::vec3& posicionDron, float velocid
         float distanciaHorizontal = glm::length(glm::vec2(posicionDron.x - punto.posicion.x,
                                                            posicionDron.z - punto.posicion.z));
         float alturaRelativa = posicionDron.y - punto.posicion.y;
-        bool dentro = distanciaHorizontal <= punto.radio && alturaRelativa >= 1.5f && alturaRelativa <= 28.0f;
-        bool estable = velocidadDron <= VELOCIDAD_MAX_ESCANEO;
+        bool dentro = distanciaHorizontal <= punto.radio &&
+                      alturaRelativa >= alturaMinimaEscaneo &&
+                      alturaRelativa <= alturaMaximaEscaneo;
+        bool estable = velocidadDron <= velocidadMaxEscaneo;
 
         if (dentro && estable) {
             punto.estado = EstadoPuntoEscaneo::Escaneando;
             punto.progreso = std::min(1.0f, punto.progreso + dt / DURACION_ESCANEO);
         } else {
             punto.progreso = std::max(0.0f, punto.progreso - dt / (DURACION_ESCANEO * 2.0f));
-            punto.estado = distanciaHorizontal <= RADIO_CERCANO
+            punto.estado = distanciaHorizontal <= radioCercano
                          ? EstadoPuntoEscaneo::Cercano : EstadoPuntoEscaneo::Pendiente;
         }
 
         if (punto.progreso >= 1.0f) {
             punto.estado = EstadoPuntoEscaneo::Completado;
             ++completados;
-            mapa.marcarZona(punto.posicion.x, punto.posicion.z, punto.radio * 2.5f);
+            // Solo su propia zona (mas un margen minimo). Antes se usaba 2.5x,
+            // que con el radar ya doblado revelaba de golpe una cuarta parte
+            // del mapa y dejaba sin sentido la niebla de guerra.
+            mapa.marcarZona(punto.posicion.x, punto.posicion.z, punto.radio * 1.15f);
             std::cout << "[SCAN] Punto " << punto.id << " completado ("
                       << completados << "/" << puntos.size() << ")\n";
         }

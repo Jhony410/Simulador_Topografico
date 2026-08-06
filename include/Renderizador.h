@@ -7,6 +7,7 @@
 #include "PostProceso.h"
 #include "VistaCurvas.h"
 #include "VistaDron.h"
+#include "VistaEscaner.h"
 #include "VistaExploracion.h"
 #include "VistaHUD.h"
 #include "VistaMarcadores.h"
@@ -34,7 +35,7 @@ public:
     void renderizar(Escena& escena, const Camara& camara,
                     int anchoPantalla, int altoPantalla,
                     const EstadoTeclas& teclas, float dt,
-                    int opcionMenu, int opcionConfiguracion, bool enConfiguracion);
+                    int opcionMenu, int mapaSeleccionado);
 
     const ContadorRendimiento& obtenerMetricas() const { return metricas; }
 
@@ -44,6 +45,7 @@ private:
     VistaMarcadores vistaMarcadores;
     VistaMinimapa   vistaMinimapa;
     VistaDron       vistaDron;
+    VistaEscaner    vistaEscaner;
     VistaExploracion vistaExploracion;
     VistaCurvas     vistaCurvas;
     VistaHUD        vistaHUD;

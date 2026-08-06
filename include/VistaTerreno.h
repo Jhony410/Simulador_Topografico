@@ -2,6 +2,7 @@
 #include "Camara.h"
 #include "Ajustes.h"
 #include "Componentes.h"
+#include "EscalaMundo.h"
 #include "Terreno.h"
 
 #include <glad/glad.h>
@@ -32,7 +33,8 @@ public:
                 const ComponenteMaterial& material, bool topologiaLineas,
                 const glm::vec3& posicionDron, float aspecto,
                 const Quadtree& quadtree, const std::vector<int>& nodosVisibles,
-                const Ajustes& ajustes, const LimitesMundo& limites,
+                const Ajustes& ajustes, const EscalaMundo& escala,
+                const LimitesMundo& limites,
                 float minAltura, float maxAltura, float tiempo);
 
 private:
@@ -42,7 +44,8 @@ private:
     GLint  locPosicionDron = -1, locRadioNitido = -1, locRadioDesvanecido = -1;
     GLint  locPosicionCamara = -1, locModo = -1, locPasada = -1;
     GLint  locMinAltura = -1, locMaxAltura = -1, locLimites = -1;
-    GLint  locCurvas = -1, locTiempo = -1, locExploracion = -1;
+    GLint  locCurvas = -1, locTiempo = -1, locExploracion = -1, locNiebla = -1;
+    GLint  locRadioRevelado = -1;
 
     GLuint vaoRejilla = 0, vboRejilla = 0, eboRejilla = 0;
     GLuint vaoCalles  = 0, vboCalles  = 0, eboCalles  = 0;

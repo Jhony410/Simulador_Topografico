@@ -23,6 +23,7 @@ bool Renderizador::inicializar() {
     vistaMarcadores.inicializar(recursos);
     vistaMinimapa.inicializar(recursos);
     vistaDron.inicializar(recursos);
+    vistaEscaner.inicializar(recursos);
     vistaExploracion.inicializar(recursos);
     vistaCurvas.inicializar(recursos);
     vistaHUD.inicializar(recursos);
@@ -53,7 +54,8 @@ void Renderizador::sincronizarConEscena(Escena& escena) {
     }
     // Las estacas se resiembran con el terreno, asi que viajan juntas.
     if (terrenoCambio) {
-        vistaMarcadores.subirMarcadores(escena.obtenerMarcadores());
+        vistaMarcadores.subirMarcadores(escena.obtenerMarcadores(),
+                                        escena.obtenerTerreno().obtenerLimites());
         vistaMinimapa.subirTerreno(escena.obtenerTerreno());
     }
 
@@ -66,12 +68,14 @@ void Renderizador::sincronizarConEscena(Escena& escena) {
 void Renderizador::renderizar(Escena& escena, const Camara& camara,
                               int anchoPantalla, int altoPantalla,
                               const EstadoTeclas& teclas, float dt,
-                              int opcionMenu, int opcionConfiguracion, bool enConfiguracion) {
+                              int opcionMenu, int mapaSeleccionado) {
     metricas.nuevoFrame(dt);
     tiempoTotal += dt;
+    vistaEscaner.avanzar(dt);
 
     float aspecto = (altoPantalla > 0) ? (float)anchoPantalla / (float)altoPantalla : 1.0f;
     const glm::vec3& posicionDron = escena.obtenerDron().obtenerPosicion();
+    const EscalaMundo& escala = escena.obtenerEscala();
 
     // ---- Visibilidad: un solo frustum alimenta a las dos jerarquias ----
     frustum.extraerDe(camara.matrizProyeccion(aspecto) * camara.matrizVista());
@@ -106,6 +110,7 @@ void Renderizador::renderizar(Escena& escena, const Camara& camara,
             vistaTerreno.dibujar(camara, modelo, *material,
                                  malla && malla->topologiaLineas, posicionDron, aspecto,
                                  quadtree, nodosTerrenoVisibles, escena.obtenerAjustes(),
+                                 escala,
                                  escena.obtenerTerreno().obtenerLimites(),
                                  escena.obtenerTerreno().obtenerLimites().minY,
                                  escena.obtenerTerreno().obtenerLimites().maxY,
@@ -113,14 +118,16 @@ void Renderizador::renderizar(Escena& escena, const Camara& camara,
     }
 
     // ---- Marcadores de sondeo ----
+    vistaMarcadores.actualizarExploracion(escena.obtenerMapaExploracion());
     metricas.sumarDrawCalls(
         vistaMarcadores.dibujar(camara,
                                 escena.obtenerNodoMarcadores()->obtenerTransformacionMundo(),
-                                posicionDron, aspecto, marcadoresVisibles));
+                                posicionDron, aspecto, escala, marcadoresVisibles));
 
     metricas.sumarDrawCalls(vistaExploracion.dibujar(
         camara, escena.obtenerTerreno(), escena.obtenerSistemaExploracion(),
-        escena.obtenerSistemaMedicion(), escena.obtenerAjustes(), posicionDron,
+        escena.obtenerMapaExploracion(),
+        escena.obtenerSistemaMedicion(), escena.obtenerAjustes(), escala, posicionDron,
         aspecto, tiempoTotal));
 
     // ---- Dron ----
@@ -133,7 +140,18 @@ void Renderizador::renderizar(Escena& escena, const Camara& camara,
             vistaDron.dibujar(camara, modelo, *materialDron, *animDron, aspecto));
     }
 
-    // ---- Panel holografico de curvas de nivel ----
+    // ---- Luz de escaneo: DESPUES del dron y del terreno -------------------
+    // Va la ultima de las pasadas opacas porque se mezcla de forma aditiva y
+    // sin escribir profundidad: necesita el z-buffer ya resuelto para que el
+    // relieve que esta delante del haz lo siga tapando.
+    if (auto* escaner = entDron.obtenerComponente<ComponenteEscaner>()) {
+        bool escaneando = escaner->activo &&
+                          escena.obtenerEstadoAplicacion() == EstadoAplicacion::Playing;
+        metricas.sumarDrawCalls(
+            vistaEscaner.dibujar(camara, escena.obtenerTerreno(), escala,
+                                 posicionDron, aspecto, escaneando));
+    }
+
     // ---- Post-proceso: desenfoca el brillo y compone sobre la pantalla ----
     metricas.sumarDrawCalls(postProceso.componer(anchoPantalla, altoPantalla,
                                                   escena.obtenerAjustes().particulas,
@@ -141,14 +159,14 @@ void Renderizador::renderizar(Escena& escena, const Camara& camara,
 
     metricas.sumarDrawCalls(vistaMinimapa.dibujar(
         escena.obtenerTerreno(), escena.obtenerMapaExploracion(),
-        escena.obtenerSistemaExploracion(), posicionDron, escena.obtenerDron().obtenerYaw(),
+        posicionDron, escena.obtenerDron().obtenerYaw(),
         anchoPantalla, altoPantalla, escena.obtenerAjustes().minimapa));
 
     // ---- HUD 2D ----
     // Va despues de componer: el HUD no debe brillar ni desenfocarse.
     metricas.sumarDrawCalls(
         vistaHUD.dibujar(escena, teclas, (float)anchoPantalla, (float)altoPantalla,
-                         metricas, camara, opcionMenu, opcionConfiguracion, enConfiguracion));
+                         metricas, camara, opcionMenu, mapaSeleccionado));
 }
 
 void Renderizador::liberar() {
@@ -156,6 +174,7 @@ void Renderizador::liberar() {
     vistaMarcadores.liberar();
     vistaMinimapa.liberar();
     vistaDron.liberar();
+    vistaEscaner.liberar();
     vistaExploracion.liberar();
     vistaCurvas.liberar();
     vistaHUD.liberar();
