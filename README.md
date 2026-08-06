@@ -2,6 +2,12 @@
 
 Aplicación académica de escritorio en C++17 y OpenGL 3.3 para pilotar un dron, inspeccionar terrenos y completar una misión reproducible de levantamiento topográfico. La identidad visual es propia: fondo azul-negro, cartografía luminosa, balizas de escaneo y dron amarillo.
 
+## 🎞️ Video explicativo del Proyecto
+
+🔗 [Ver video en YouTube](https://youtu.be/dvRV8CqVoFs)
+
+---
+
 ![GeoDrone en ejecución](docs/captura_geodrone.png)
 
 ## 1. Inicio rápido
