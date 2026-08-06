@@ -11,9 +11,13 @@ namespace fs = std::filesystem;
 Escena::Escena() = default;
 
 bool Escena::inicializar() {
+    estadoAplicacion = EstadoAplicacion::Loading;
+    std::cout << "[INIT] Descubriendo mapas en assets/\n";
     mapas = CargadorModelos::descubrirTerrenos(Configuracion::CARPETA_ASSETS);
     if (mapas.empty()) {
-        std::cerr << "ERROR: no hay terrenos en " << Configuracion::CARPETA_ASSETS << "/\n";
+        mensajeError = "No se encontraron terrenos compatibles en assets/.";
+        estadoAplicacion = EstadoAplicacion::Error;
+        std::cerr << "[ERROR] " << mensajeError << "\n";
         return false;
     }
     std::cout << "Terrenos:\n";
@@ -29,7 +33,13 @@ bool Escena::inicializar() {
 
     construirGrafo();
     construirEntidades();
-    return cargarMapa(0);
+    if (!cargarMapa(0)) {
+        mensajeError = "No fue posible cargar el primer terreno disponible.";
+        estadoAplicacion = EstadoAplicacion::Error;
+        return false;
+    }
+    estadoAplicacion = EstadoAplicacion::Intro;
+    return true;
 }
 
 void Escena::construirGrafo() {
@@ -96,7 +106,11 @@ bool Escena::cargarMapa(int indice) {
     std::cout << "\nCargando [" << (mapaActual + 1) << "/" << mapas.size() << "] "
               << fs::path(ruta).filename().string() << " ...\n";
 
-    if (!terreno.cargarDesdeArchivo(ruta)) { std::cerr << "  Fallo.\n"; return false; }
+    if (!terreno.cargarDesdeArchivo(ruta)) {
+        mensajeError = "Fallo al cargar " + fs::path(ruta).filename().string();
+        std::cerr << "[ERROR] " << mensajeError << "\n";
+        return false;
+    }
 
     // La malla cambio de contenido: la Vista debe volver a subirla a la GPU.
     if (auto* comp = entidadTerreno.obtenerComponente<ComponenteMalla>()) {
@@ -118,11 +132,20 @@ bool Escena::cargarMapa(int indice) {
     // Estacas resembradas con la misma semilla: cada mapa tiene su propio
     // patron, pero siempre el mismo entre ejecuciones.
     marcadores.generar(terreno, Configuracion::NUM_MARCADORES, Configuracion::SEMILLA_MARCADORES);
+    sistemaExploracion.generar(terreno, Configuracion::NUM_PUNTOS_ESCANEO,
+                               Configuracion::SEMILLA_ESCANEO + static_cast<unsigned int>(indice));
+    sistemaMedicion.limpiar();
 
     // Dron al centro del mapa, a una altura segura sobre el relieve.
     dron.establecerPosicion(glm::vec3(0.0f, terreno.alturaEn(0.0f, 0.0f) + Configuracion::ALTURA_INICIAL, 0.0f));
     dron.establecerYaw(0.0f);
+    if (estadoAplicacion != EstadoAplicacion::Loading)
+        estadoAplicacion = EstadoAplicacion::Playing;
     return true;
+}
+
+bool Escena::reiniciarMision() {
+    return cargarMapa(mapaActual);
 }
 
 void Escena::mostrarAviso(const std::string& texto) {
@@ -162,33 +185,44 @@ bool Escena::aplicarGuardado(const std::string& nombreMapa,
 }
 
 void Escena::actualizar(float dt) {
-    dron.actualizar(terreno, dt);
     aviso.actualizar(dt);
+    const bool jugando = estadoAplicacion == EstadoAplicacion::Playing;
+    if (jugando) dron.actualizar(terreno, dt);
 
     // Modelo -> componente transformada -> nodo del grafo.
     if (auto* trans = entidadDron.obtenerComponente<ComponenteTransformada>()) {
-        trans->posicion      = dron.obtenerPosicion();
+        trans->posicion      = dron.obtenerPosicion() + glm::vec3(0.0f, dron.obtenerFlotacion(), 0.0f);
         trans->rotacionEuler = glm::vec3(dron.obtenerPitch(), dron.obtenerYaw(), dron.obtenerRoll());
         trans->volcarAlNodo();
     }
     if (auto* trans = entidadTerreno.obtenerComponente<ComponenteTransformada>())
         trans->volcarAlNodo();
 
-    if (auto* anim = entidadDron.obtenerComponente<ComponenteAnimacion>())
+    if (jugando) if (auto* anim = entidadDron.obtenerComponente<ComponenteAnimacion>())
         anim->avanzar(dt);
 
     // ---- Escaneo: detectar encola, procesarLote desencola un lote acotado ----
-    if (auto* escaner = entidadDron.obtenerComponente<ComponenteEscaner>()) {
+    if (jugando) if (auto* escaner = entidadDron.obtenerComponente<ComponenteEscaner>()) {
         if (escaner->activo) {
             const glm::vec3& p = dron.obtenerPosicion();
             sistemaEscaneo.detectar(mapaExploracion, p.x, p.z, escaner->radioEscaneo);
             sistemaEscaneo.procesarLote(mapaExploracion, escaner->celdasPorFrame);
         }
     }
-    estadoMision.actualizar(mapaExploracion.porcentajeExplorado(), dt);
+    if (jugando) {
+        sistemaExploracion.actualizar(dron.obtenerPosicion(), dron.obtenerRapidez(),
+                                      dt, mapaExploracion);
+        estadoMision.actualizar(sistemaExploracion.obtenerProgresoPuntos(), dt);
+        if (sistemaExploracion.estaCompleta()) {
+            estadoAplicacion = EstadoAplicacion::MissionComplete;
+            std::cout << "[MISSION] Exploracion completada en "
+                      << sistemaExploracion.obtenerTiempoMision() << " segundos\n";
+        }
+    }
 
     // Marching Squares + grafo, con su propio freno de 200 ms.
-    if (generadorCurvas.actualizar(terreno, mapaExploracion, curvas, dt))
+    if (jugando && ajustes.curvasNivel &&
+        generadorCurvas.actualizar(terreno, mapaExploracion, curvas, dt))
         curvasSucias = true;
 
     // Una sola pasada en preorden actualiza dron, sus 4 helices y el sensor.

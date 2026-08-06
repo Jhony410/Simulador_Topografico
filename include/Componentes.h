@@ -69,7 +69,7 @@ public:
     void avanzar(float dt) { tiempo += dt; }
 };
 
-// ---- Sensor de escaneo del dron (se explota en la FASE 3) ----------------
+// ---- Sensor de escaneo continuo del dron ----------------------------------
 class ComponenteEscaner : public Componente {
 public:
     float radioEscaneo   = 14.0f;  // radio en unidades de mundo

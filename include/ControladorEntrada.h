@@ -31,6 +31,9 @@ public:
     // Tamaño de ventana vigente, actualizado por el callback de framebuffer.
     int obtenerAncho() const { return anchoPantalla; }
     int obtenerAlto()  const { return altoPantalla; }
+    int obtenerOpcionMenu() const { return opcionMenu; }
+    int obtenerOpcionConfiguracion() const { return opcionConfiguracion; }
+    bool estaEnConfiguracion() const { return enConfiguracion; }
 
 private:
     // Callbacks de GLFW: recuperan la instancia via glfwGetWindowUserPointer.
@@ -43,6 +46,9 @@ private:
     void manejarBotonMouse(int boton, int accion);
     void manejarMovimientoMouse(double x, double y);
     void manejarTecla(int tecla, int accion);
+    void seleccionarMedicion(double x, double y);
+    void ejecutarOpcionMenu();
+    void ajustarConfiguracion(int direccion);
 
     GLFWwindow* ventana = nullptr;
     Escena*     escena  = nullptr;
@@ -58,4 +64,7 @@ private:
     int  mapaSolicitado = 0;
 
     int anchoPantalla = 1280, altoPantalla = 720;
+    int opcionMenu = 0;
+    int opcionConfiguracion = 0;
+    bool enConfiguracion = false;
 };

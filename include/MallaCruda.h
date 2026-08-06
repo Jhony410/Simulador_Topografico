@@ -12,7 +12,7 @@ struct MallaCruda {
     // Aristas caracteristicas (pares para GL_LINES). Solo se rellena en mallas
     // que se dibujan como armazon, como el dron.
     std::vector<unsigned int> aristas;
-    int                       floatsPorVertice = 3;  // 3 = xyz, 4 = xyz + idHelice
+    int                       floatsPorVertice = 3;  // 3 = xyz, 7 = xyz + normal + idHelice
 
     void limpiar() {
         vertices.clear();

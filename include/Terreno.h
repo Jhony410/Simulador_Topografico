@@ -44,6 +44,10 @@ public:
     bool estaCargado()        const { return anchoGrilla > 0 && !malla.vacia(); }
 
     const std::string& obtenerNombreArchivo() const { return nombreArchivo; }
+    float obtenerAlturaMedia() const { return alturaMedia; }
+    std::size_t obtenerNumeroVertices() const { return malla.numeroVertices(); }
+    std::size_t obtenerNumeroTriangulos() const { return mallaDeLineas ? 0 : malla.indices.size() / 3; }
+    float obtenerDensidad() const;
 
 private:
     // Reorienta a Y-up, centra, escala a ANCHO_OBJETIVO y rellena el heightmap.
@@ -66,6 +70,7 @@ private:
     std::vector<float> alturas;           // grilla [z * anchoGrilla + x]
     int                anchoGrilla = 0;
     int                resolucionRejilla = 0;
+    float              alturaMedia = 0.0f;
 
     std::string  nombreArchivo;
 };

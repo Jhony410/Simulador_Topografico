@@ -113,6 +113,12 @@ bool cargarOBJ(const std::string& ruta,
     // Remapeo: solo se conservan los vertices realmente referenciados.
     std::unordered_map<unsigned int, unsigned int> remapeo;
     for (unsigned int global : triangulos) {
+        if (global >= temporales.size()) {
+            std::cerr << "[ERROR] OBJ invalido: indice de cara fuera del rango en " << ruta << "\n";
+            posiciones.clear();
+            indices.clear();
+            return false;
+        }
         auto it = remapeo.find(global);
         unsigned int nuevo;
         if (it == remapeo.end()) {
@@ -239,7 +245,7 @@ bool cargarDronAnimado(const std::string& ruta,
     if (m.skins.empty()) { std::cerr << "ERROR: el dron no tiene skin\n"; return false; }
 
     malla.limpiar();
-    malla.floatsPorVertice = 4;   // [x, y, z, idHelice]
+    malla.floatsPorVertice = 7;   // [x, y, z, nx, ny, nz, idHelice]
 
     // 1) Matrices locales y globales de todos los nodos.
     int N = (int)m.nodes.size();
@@ -361,12 +367,24 @@ bool cargarDronAnimado(const std::string& ruta,
     float extensionMax = std::max(extension.x, std::max(extension.y, extension.z));
     float escala = (extensionMax > 1e-6f) ? (tamanioObjetivo / extensionMax) : 1.0f;
 
-    malla.vertices.reserve(posiciones.size() * 4);
+    std::vector<glm::vec3> normales(posiciones.size(), glm::vec3(0.0f));
+    for (std::size_t i = 0; i + 2 < malla.indices.size(); i += 3) {
+        unsigned int ia = malla.indices[i], ib = malla.indices[i + 1], ic = malla.indices[i + 2];
+        if (ia >= posiciones.size() || ib >= posiciones.size() || ic >= posiciones.size()) continue;
+        glm::vec3 n = glm::cross(posiciones[ib] - posiciones[ia], posiciones[ic] - posiciones[ia]);
+        if (glm::length(n) > 1e-8f) { normales[ia] += n; normales[ib] += n; normales[ic] += n; }
+    }
+    for (auto& n : normales) n = glm::length(n) > 1e-8f ? glm::normalize(n) : glm::vec3(0, 1, 0);
+
+    malla.vertices.reserve(posiciones.size() * 7);
     for (std::size_t i = 0; i < posiciones.size(); i++) {
         glm::vec3 n = (posiciones[i] - centro) * escala;
         malla.vertices.push_back(n.x);
         malla.vertices.push_back(n.y);
         malla.vertices.push_back(n.z);
+        malla.vertices.push_back(normales[i].x);
+        malla.vertices.push_back(normales[i].y);
+        malla.vertices.push_back(normales[i].z);
         malla.vertices.push_back(idsHelice[i]);
     }
     for (int k = 0; k < 4; k++) pivotesHelices[k] = (pivotesHelices[k] - centro) * escala;

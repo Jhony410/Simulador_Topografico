@@ -7,8 +7,10 @@
 #include "PostProceso.h"
 #include "VistaCurvas.h"
 #include "VistaDron.h"
+#include "VistaExploracion.h"
 #include "VistaHUD.h"
 #include "VistaMarcadores.h"
+#include "VistaMinimapa.h"
 #include "VistaTerreno.h"
 
 #include <vector>
@@ -31,7 +33,8 @@ public:
 
     void renderizar(Escena& escena, const Camara& camara,
                     int anchoPantalla, int altoPantalla,
-                    const EstadoTeclas& teclas, float dt);
+                    const EstadoTeclas& teclas, float dt,
+                    int opcionMenu, int opcionConfiguracion, bool enConfiguracion);
 
     const ContadorRendimiento& obtenerMetricas() const { return metricas; }
 
@@ -39,7 +42,9 @@ private:
     GestorRecursos  recursos;
     VistaTerreno    vistaTerreno;
     VistaMarcadores vistaMarcadores;
+    VistaMinimapa   vistaMinimapa;
     VistaDron       vistaDron;
+    VistaExploracion vistaExploracion;
     VistaCurvas     vistaCurvas;
     VistaHUD        vistaHUD;
     PostProceso     postProceso;
@@ -51,4 +56,5 @@ private:
     std::vector<int> marcadoresVisibles;
 
     bool dronSubido = false;
+    float tiempoTotal = 0.0f;
 };

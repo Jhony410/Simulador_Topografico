@@ -28,7 +28,7 @@ bool cargarCSVCalles(const std::string& ruta,
 
 // Dron skinned: hornea la pose de reposo en CPU (queda derecho) y marca cada
 // vertice con el id de helice dominante para que el shader la haga girar.
-// Devuelve la malla interleaved [x, y, z, idHelice] y los 4 pivotes de giro.
+// Devuelve [x,y,z,nx,ny,nz,idHelice] y los 4 pivotes de giro.
 bool cargarDronAnimado(const std::string& ruta,
                        MallaCruda& malla,
                        glm::vec3 pivotesHelices[4],

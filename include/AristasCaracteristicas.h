@@ -9,7 +9,7 @@
 //  Dibujar un modelo "en alambre" con glPolygonMode(GL_LINE) pinta las TRES
 //  aristas de cada triangulo, diagonales incluidas. Con 83.712 triangulos, a
 //  tamaño de pantalla eso son mas lineas que pixeles: el dron se lee como una
-//  mancha solida, no como un armazon. La referencia de Orano usa un modelo
+//  mancha solida, no como un armazon. La direccion visual usa un modelo
 //  low-poly donde cada linea SI se distingue.
 //
 //  LA SOLUCION

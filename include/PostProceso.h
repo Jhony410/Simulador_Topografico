@@ -33,7 +33,7 @@ public:
 
     // Desenfoca el brillo y compone el resultado en el framebuffer por defecto.
     // Devuelve el numero de draw calls emitidas.
-    int componer(int ancho, int alto);
+    int componer(int ancho, int alto, bool particulas, float tiempo);
 
     bool estaListo() const { return listo; }
 
@@ -43,6 +43,7 @@ private:
     void dibujarQuad();
 
     GLuint fboEscena = 0, texColor = 0, texBrillo = 0, rboProfundidad = 0;
+    GLuint fboMsaa = 0, rboColorMsaa[2] = {0, 0}, rboProfundidadMsaa = 0;
     GLuint fboPing[2] = {0, 0}, texPing[2] = {0, 0};
 
     GLuint progBrillo = 0, progDesenfoque = 0, progComposicion = 0;
@@ -51,4 +52,6 @@ private:
     int ancho = 0, alto = 0;
     int anchoBrillo = 0, altoBrillo = 0;
     bool listo = false;
+    bool usaMsaa = false;
+    int muestrasMsaa = 4;
 };

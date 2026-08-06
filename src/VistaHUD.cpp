@@ -2,6 +2,7 @@
 #include "Configuracion.h"
 #include "DisenoHUD.h"
 #include "ContadorRendimiento.h"
+#include "Camara.h"
 #include "Escena.h"
 #include "GestorRecursos.h"
 
@@ -219,10 +220,11 @@ void VistaHUD::dibujarBoton(const glm::vec4& r, const char* etiqueta, bool activ
 }
 
 // ---------------------------------------------------------------------------
-void VistaHUD::dibujarBarraProgreso(const EstadoMision& mision,
+void VistaHUD::dibujarBarraProgreso(const Escena& escena,
                                     float anchoPantalla, float altoPantalla) {
     glm::vec4 carril = DisenoHUD::rectBarraProgreso(anchoPantalla, altoPantalla);
-    float progreso = mision.obtenerProgreso();
+    const EstadoMision& mision = escena.obtenerEstadoMision();
+    float progreso = escena.obtenerSistemaExploracion().obtenerProgresoPuntos();
 
     // Carril apagado de fondo, para que se lea cuanto falta.
     dibujarRectangulo(carril.x, carril.y, carril.z, carril.w,
@@ -242,6 +244,14 @@ void VistaHUD::dibujarBarraProgreso(const EstadoMision& mision,
     x = std::min(x, anchoPantalla - anchoTexto(etiqueta, escala) - 12.0f);
     dibujarTexto(x, carril.y - ALTO_GLIFO * escala - 4.0f, escala, etiqueta,
                  glm::vec4(Paleta::ACENTO, 1.0f));
+
+    char puntos[48];
+    std::snprintf(puntos, sizeof(puntos), "EXPLORACION  PUNTOS %d / %d  COBERTURA %d%%",
+                  escena.obtenerSistemaExploracion().obtenerCompletados(),
+                  escena.obtenerSistemaExploracion().obtenerTotal(),
+                  static_cast<int>(escena.obtenerMapaExploracion().porcentajeExplorado() * 100.0f + 0.5f));
+    dibujarTexto(carril.x, carril.y + 12.0f, 1.25f, puntos,
+                 glm::vec4(Paleta::TEXTO_SEC, 0.95f), 0.7f);
 }
 
 void VistaHUD::dibujarTextoMision(const EstadoMision& mision,
@@ -300,6 +310,8 @@ void VistaHUD::dibujarEsquinas(float anchoPantalla, float altoPantalla) {
     // la pantalla y con interletraje amplio este rotulo llegaria a solaparlo.
     dibujarTexto(44.0f, 34.0f, 1.4f, Configuracion::TITULO_APP.c_str(),
                  glm::vec4(0.92f, 0.95f, 0.99f, 1.0f), 2.0f);
+    dibujarTexto(44.0f, 53.0f, 1.05f, Configuracion::SUBTITULO_APP.c_str(),
+                 glm::vec4(Paleta::TEXTO_SEC, 0.92f), 1.0f);
 
     // ---- Arriba a la derecha: circulo amarillo con X (cierra la aplicacion) ----
     glm::vec4 salir = DisenoHUD::rectBotonSalir(anchoPantalla, altoPantalla);
@@ -360,7 +372,8 @@ void VistaHUD::dibujarAviso(const Escena& escena, float anchoPantalla, float alt
     dibujarTexto(x, y, escala, texto, glm::vec4(Paleta::ACENTO, alpha), ESPACIADO_ETIQUETA);
 }
 
-void VistaHUD::dibujarMetricas(const ContadorRendimiento& metricas,
+void VistaHUD::dibujarMetricas(const Escena& escena, const ContadorRendimiento& metricas,
+                               const Camara& camara,
                                float anchoPantalla, float altoPantalla) {
     (void)altoPantalla;
     // Arriba a la derecha, en gris: son datos de diagnostico, no de la mision.
@@ -368,7 +381,7 @@ void VistaHUD::dibujarMetricas(const ContadorRendimiento& metricas,
     // Bajo el icono de menu: arriba al centro manda el texto de mision, que no
     // debe competir con cifras de diagnostico.
     const float escala = 1.3f;
-    const float x = anchoPantalla - 178.0f;
+    const float x = anchoPantalla - 238.0f;
     float y = 122.0f;
     const float salto = 15.0f;
     const glm::vec4 gris(Paleta::TEXTO_SEC, 0.85f);
@@ -384,13 +397,123 @@ void VistaHUD::dibujarMetricas(const ContadorRendimiento& metricas,
 
     std::snprintf(linea, sizeof(linea), "LINEAS %d/%d",
                   metricas.obtenerSegmentosDibujados(), metricas.obtenerSegmentosTotales());
-    dibujarTexto(x, y, escala, linea, gris, 1.0f);
+    dibujarTexto(x, y, escala, linea, gris, 1.0f); y += salto;
+
+    const Dron& dron = escena.obtenerDron();
+    std::snprintf(linea, sizeof(linea), "ALTITUD %.1f  VELOCIDAD %.1f", dron.obtenerAlturaSobreTerreno(), dron.obtenerRapidez());
+    dibujarTexto(x, y, escala, linea, glm::vec4(Paleta::BLANCO,0.9f), 0.6f); y += salto;
+    const LimitesMundo& lim = escena.obtenerTerreno().obtenerLimites();
+    float nx = (dron.obtenerPosicion().x - lim.minX) / lim.ancho();
+    float nz = (dron.obtenerPosicion().z - lim.minZ) / lim.profundidad();
+    std::snprintf(linea, sizeof(linea), "COORD %.3f  %.3f", nx, nz);
+    dibujarTexto(x, y, escala, linea, gris, 0.8f); y += salto;
+    std::snprintf(linea, sizeof(linea), "OBJETIVO %.1f  CAM %s",
+                  escena.obtenerSistemaExploracion().distanciaAlObjetivo(dron.obtenerPosicion()),
+                  nombreModoCamara(camara.obtenerModo()));
+    dibujarTexto(x, y, escala, linea, gris, 0.5f);
+}
+
+void VistaHUD::dibujarPanelMedicion(const Escena& escena, float anchoPantalla, float altoPantalla) {
+    (void)anchoPantalla; (void)altoPantalla;
+    if (!escena.obtenerSistemaMedicion().estaActivo()) return;
+    const ResultadoMedicion r = escena.obtenerSistemaMedicion().calcular();
+    const Terreno& t = escena.obtenerTerreno();
+    dibujarRectangulo(24, 92, 330, 168, glm::vec4(0.015f,0.035f,0.060f,0.86f));
+    dibujarRectangulo(24, 92, 4, 168, glm::vec4(Paleta::CIAN,1));
+    dibujarTexto(42,108,1.55f,"HERRAMIENTA TOPOGRAFICA",glm::vec4(Paleta::CIAN,1),1.1f);
+    char s[96]; float y = 137.0f;
+    std::snprintf(s,sizeof(s),"PUNTOS %d  DIST H %.2f  DIST 3D %.2f",
+                  (int)escena.obtenerSistemaMedicion().obtenerPuntos().size(),r.distanciaHorizontal,r.distancia3D);
+    dibujarTexto(42,y,1.2f,s,glm::vec4(Paleta::BLANCO,0.95f),0.4f); y+=17;
+    std::snprintf(s,sizeof(s),"DESNIVEL %.2f  PENDIENTE %.2f%%  ANGULO %.2f",
+                  r.diferenciaElevacion,r.pendientePorcentual,r.anguloGrados);
+    dibujarTexto(42,y,1.2f,s,glm::vec4(Paleta::BLANCO,0.95f),0.4f); y+=17;
+    std::snprintf(s,sizeof(s),"AREA PROYECTADA %.2f",r.areaProyectada);
+    dibujarTexto(42,y,1.2f,s,glm::vec4(Paleta::BLANCO,0.95f),0.4f); y+=22;
+    std::snprintf(s,sizeof(s),"TERRENO MIN %.2f  MAX %.2f  MEDIA %.2f",
+                  t.obtenerLimites().minY,t.obtenerLimites().maxY,t.obtenerAlturaMedia());
+    dibujarTexto(42,y,1.15f,s,glm::vec4(Paleta::TEXTO_SEC,1),0.3f); y+=16;
+    std::snprintf(s,sizeof(s),"VERTICES %d  TRIANGULOS %d  DENSIDAD %.2f",
+                  (int)t.obtenerNumeroVertices(),(int)t.obtenerNumeroTriangulos(),t.obtenerDensidad());
+    dibujarTexto(42,y,1.15f,s,glm::vec4(Paleta::TEXTO_SEC,1),0.3f);
+}
+
+void VistaHUD::dibujarAdvertencias(const Escena& escena, float anchoPantalla, float altoPantalla) {
+    (void)altoPantalla;
+    if (escena.obtenerEstadoAplicacion() != EstadoAplicacion::Playing) return;
+    const Dron& dron = escena.obtenerDron();
+    const char* mensaje = dron.estaDemasiadoBajo() ? "ALERTA: ALTITUD DE SEGURIDAD" :
+                          (dron.estaCercaDelBorde() ? "ALERTA: LIMITE DEL AREA" : nullptr);
+    if (!mensaje) return;
+    float escala = 1.45f;
+    float w = anchoTexto(mensaje, escala, 1.0f);
+    dibujarRectangulo((anchoPantalla-w)/2-18,145,w+36,28,glm::vec4(0.16f,0.035f,0.02f,0.86f));
+    dibujarTexto((anchoPantalla-w)/2,153,escala,mensaje,glm::vec4(Paleta::ALERTA,1),1.0f);
+}
+
+void VistaHUD::dibujarMenuEstado(const Escena& escena, float anchoPantalla, float altoPantalla,
+                                 int opcionMenu, int opcionConfiguracion, bool enConfiguracion) {
+    EstadoAplicacion estado = escena.obtenerEstadoAplicacion();
+    if (estado == EstadoAplicacion::Playing) return;
+    dibujarRectangulo(0,0,anchoPantalla,altoPantalla,glm::vec4(0.005f,0.012f,0.025f,0.90f));
+    const float panelW=560, panelH=enConfiguracion?440:360;
+    float px=(anchoPantalla-panelW)/2, py=(altoPantalla-panelH)/2;
+    dibujarRectangulo(px,py,panelW,panelH,glm::vec4(0.018f,0.038f,0.065f,0.96f));
+    dibujarRectangulo(px,py,5,panelH,glm::vec4(Paleta::ACENTO,1));
+    const char* titulo = estado==EstadoAplicacion::Intro ? "GEODRONE" :
+                         (estado==EstadoAplicacion::Paused ? "SISTEMA EN PAUSA" :
+                          (estado==EstadoAplicacion::MissionComplete ? "MISION COMPLETADA" : nombreEstado(estado)));
+    dibujarTexto(px+42,py+40,3.0f,titulo,glm::vec4(Paleta::BLANCO,1),2.4f);
+    dibujarTexto(px+42,py+77,1.25f,Configuracion::SUBTITULO_APP.c_str(),glm::vec4(Paleta::TEXTO_SEC,1),1.0f);
+
+    if (estado == EstadoAplicacion::MissionComplete) {
+        const SistemaExploracion& e=escena.obtenerSistemaExploracion();
+        char s[96]; float y=py+128;
+        std::snprintf(s,sizeof(s),"TIEMPO TOTAL  %.1f S",e.obtenerTiempoMision()); dibujarTexto(px+42,y,1.6f,s,glm::vec4(Paleta::VERDE,1),1); y+=30;
+        std::snprintf(s,sizeof(s),"DISTANCIA RECORRIDA  %.1f",e.obtenerDistanciaRecorrida()); dibujarTexto(px+42,y,1.5f,s,glm::vec4(Paleta::BLANCO,1),0.7f); y+=27;
+        std::snprintf(s,sizeof(s),"PUNTOS ESCANEADOS  %d / %d",e.obtenerCompletados(),e.obtenerTotal()); dibujarTexto(px+42,y,1.5f,s,glm::vec4(Paleta::BLANCO,1),0.7f); y+=27;
+        std::snprintf(s,sizeof(s),"AREA CUBIERTA  %d%%",(int)(escena.obtenerMapaExploracion().porcentajeExplorado()*100+0.5f)); dibujarTexto(px+42,y,1.5f,s,glm::vec4(Paleta::BLANCO,1),0.7f);
+        dibujarTexto(px+42,py+panelH-48,1.25f,"ENTER CONTINUAR  |  R REINICIAR  |  TAB CAMBIAR MAPA",glm::vec4(Paleta::TEXTO_SEC,1),0.5f);
+        return;
+    }
+
+    if (enConfiguracion) {
+        const Ajustes& a=escena.obtenerAjustes();
+        char valores[8][32];
+        std::snprintf(valores[0],32,"SENSIBILIDAD  %.2f",a.sensibilidadMouse);
+        std::snprintf(valores[1],32,"VELOCIDAD DRON  %.2fX",a.multiplicadorVelocidadDron);
+        std::snprintf(valores[2],32,"NUBE DE PUNTOS  %.0f%%",a.intensidadPuntos*100);
+        std::snprintf(valores[3],32,"DENSIDAD WIREFRAME  %d",a.densidadWireframe+1);
+        std::snprintf(valores[4],32,"CURVAS DE NIVEL  %s",a.curvasNivel?"SI":"NO");
+        std::snprintf(valores[5],32,"PARTICULAS  %s",a.particulas?"SI":"NO");
+        std::snprintf(valores[6],32,"MINIMAPA  %s",a.minimapa?"SI":"NO");
+        std::snprintf(valores[7],32,"ESTADISTICAS  %s",a.estadisticas?"SI":"NO");
+        for(int i=0;i<8;i++){
+            float y=py+120+i*33; bool sel=i==opcionConfiguracion;
+            if(sel) dibujarRectangulo(px+34,y-8,panelW-68,27,glm::vec4(Paleta::ACENTO,0.16f));
+            dibujarTexto(px+48,y,1.45f,valores[i],sel?glm::vec4(Paleta::ACENTO,1):glm::vec4(Paleta::BLANCO,0.85f),0.5f);
+        }
+        dibujarTexto(px+42,py+panelH-32,1.1f,"FLECHAS AJUSTAR  |  ENTER / ESC VOLVER",glm::vec4(Paleta::TEXTO_SEC,1),0.4f);
+        return;
+    }
+
+    const char* intro[] = {"INICIAR EXPLORACION","SELECCIONAR TERRENO","VER / OCULTAR CONTROLES","SALIR"};
+    const char* pausa[] = {"CONTINUAR","REINICIAR MISION","CAMBIAR TERRENO","CONFIGURACION","SALIR"};
+    const char** opciones = estado==EstadoAplicacion::Intro ? intro : pausa;
+    int cantidad = estado==EstadoAplicacion::Intro ? 4 : 5;
+    for(int i=0;i<cantidad;i++){
+        float y=py+130+i*42; bool sel=i==opcionMenu;
+        if(sel) dibujarRectangulo(px+34,y-10,panelW-68,31,glm::vec4(Paleta::ACENTO,0.18f));
+        dibujarTexto(px+52,y,1.65f,opciones[i],sel?glm::vec4(Paleta::ACENTO,1):glm::vec4(Paleta::BLANCO,0.88f),1.0f);
+    }
+    dibujarTexto(px+42,py+panelH-32,1.15f,"W/S O FLECHAS  |  ENTER CONFIRMAR  |  ESC VOLVER",glm::vec4(Paleta::TEXTO_SEC,1),0.4f);
 }
 
 // ---------------------------------------------------------------------------
 int VistaHUD::dibujar(Escena& escena, const EstadoTeclas& teclas,
                       float anchoPantalla, float altoPantalla,
-                      const ContadorRendimiento& metricas) {
+                      const ContadorRendimiento& metricas, const Camara& camara,
+                      int opcionMenu, int opcionConfiguracion, bool enConfiguracion) {
     drawCalls = 0;
     glDisable(GL_DEPTH_TEST);
     glUseProgram(programa);
@@ -402,7 +525,7 @@ int VistaHUD::dibujar(Escena& escena, const EstadoTeclas& teclas,
 
     const EstadoMision& mision = escena.obtenerEstadoMision();
     dibujarTextoMision(mision, anchoPantalla, altoPantalla);
-    dibujarBarraProgreso(mision, anchoPantalla, altoPantalla);
+    dibujarBarraProgreso(escena, anchoPantalla, altoPantalla);
     dibujarPanelLateral(mision, anchoPantalla, altoPantalla);
 
     // ---- Rotulos de esquina ----
@@ -421,10 +544,19 @@ int VistaHUD::dibujar(Escena& escena, const EstadoTeclas& teclas,
     }
 
     // ---- Cluster de teclas de vuelo ----
-    dibujarClusterTeclas(teclas, anchoPantalla, altoPantalla);
+    if (escena.obtenerAjustes().controles)
+        dibujarClusterTeclas(teclas, anchoPantalla, altoPantalla);
 
-    dibujarMetricas(metricas, anchoPantalla, altoPantalla);
+    if (escena.obtenerAjustes().estadisticas)
+        dibujarMetricas(escena, metricas, camara, anchoPantalla, altoPantalla);
+    dibujarPanelMedicion(escena, anchoPantalla, altoPantalla);
+    dibujarAdvertencias(escena, anchoPantalla, altoPantalla);
     dibujarAviso(escena, anchoPantalla, altoPantalla);
+    dibujarTexto(24.0f, altoPantalla - 116.0f, 1.2f,
+                 nombreModoVisualizacion(escena.obtenerAjustes().visualizacion),
+                 glm::vec4(Paleta::TEXTO_SEC, 0.95f), 0.7f);
+    dibujarMenuEstado(escena, anchoPantalla, altoPantalla,
+                      opcionMenu, opcionConfiguracion, enConfiguracion);
 
     glBindVertexArray(0);
     glEnable(GL_DEPTH_TEST);

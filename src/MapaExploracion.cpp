@@ -9,6 +9,7 @@ void MapaExploracion::reiniciar(int nuevoAncho, int nuevoAlto, const LimitesMund
     limites = nuevosLimites;
     mascara.assign(static_cast<std::size_t>(ancho) * alto, 0);
     celdasMarcadas = 0;
+    ++revision;
 }
 
 void MapaExploracion::mundoACelda(float x, float z, int& cx, int& cz) const {
@@ -28,6 +29,7 @@ bool MapaExploracion::marcarCelda(int cx, int cz) {
     if (celda) return false;
     celda = 1;
     ++celdasMarcadas;   // contador incremental: evita recorrer todo el mapa
+    ++revision;
     return true;
 }
 
@@ -101,6 +103,7 @@ bool MapaExploracion::descomprimirRLE(const std::vector<uint32_t>& tiradas,
         posicion += longitud;
         valor ^= 1;
     }
+    ++revision;
     return true;
 }
 

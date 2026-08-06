@@ -18,7 +18,7 @@ inline constexpr int   RESOLUCION_GRILLA  = 256;     // lado del mapa de alturas
 // el Quadtree de profundidad 5 corte siempre sobre vertices existentes.
 inline constexpr int   RESOLUCION_REJILLA = 129;
 
-// ---- Atenuacion radial (look Orano: nitido bajo el dron, negro a lo lejos) --
+// ---- Atenuacion radial: nitido bajo el dron, oscuro a lo lejos ------------
 // Referencia: el terreno mide ANCHO_OBJETIVO (100) de lado, asi que radios por
 // encima de ~70 dejarian el mapa entero dentro de la zona nitida y la caida no
 // se veria. Estos valores hacen que el borde del mapa ya este casi apagado.
@@ -31,12 +31,12 @@ inline constexpr float RADIO_DESVANECIDO_MARCADOR = 110.0f;
 inline constexpr float ALPHA_MARCADORES        = 0.95f;
 
 // ---- Marcadores de sondeo ----
-inline constexpr int          NUM_MARCADORES        = 120;
+inline constexpr int          NUM_MARCADORES        = 44;
 inline constexpr unsigned int SEMILLA_MARCADORES    = 20261u;  // fija = escena reproducible
 inline constexpr float        MARCADOR_ALTURA_MIN   = 2.5f;
 inline constexpr float        MARCADOR_ALTURA_MAX   = 6.5f;
 inline constexpr float        MARCADOR_TAM_CABEZA   = 0.42f;   // lado del cuadrito, en mundo
-inline constexpr float        MARCADOR_PROB_FLOTANTE = 0.35f;
+inline constexpr float        MARCADOR_PROB_FLOTANTE = 0.18f;
 inline constexpr float        MARCADOR_FLOTE_MAX    = 22.0f;
 
 // ---- Dron ----
@@ -49,6 +49,12 @@ inline constexpr float ANGULO_ARISTA_DRON = 26.0f;
 inline constexpr float VEL_DRON           = 50.0f;
 inline constexpr float VEL_ALTURA         = 35.0f;
 inline constexpr float ALTURA_INICIAL     = 18.0f;
+inline constexpr float ACELERACION_DRON   = 5.5f;
+inline constexpr float FRENO_DRON         = 7.5f;
+inline constexpr float ALTURA_MINIMA      = 2.5f;
+inline constexpr float ALTURA_MAXIMA      = 85.0f;
+inline constexpr float MARGEN_MAPA        = 1.5f;
+inline constexpr float INCLINACION_MAX    = 13.0f;
 inline constexpr float GIRO_HELICES       = 18.0f;   // rad/seg
 inline constexpr float OFFSET_YAW_DRON    = 0.0f;    // correccion si el modelo mira mal
 
@@ -67,6 +73,8 @@ inline constexpr float CAM_RADIO_MAX      = 260.0f;
 inline constexpr float CAM_FOV            = 45.0f;
 inline constexpr float CAM_CERCANO        = 0.1f;
 inline constexpr float CAM_LEJANO         = 1500.0f;
+inline constexpr float CAM_ALTURA_SUELO   = 2.0f;
+inline constexpr float CAM_RADIO_SUPERIOR = 105.0f;
 
 // ---- Ventana ----
 inline constexpr int   ANCHO_VENTANA      = 1280;
@@ -77,6 +85,8 @@ inline constexpr float RADIO_ESCANEO           = 14.0f;  // unidades de mundo
 inline constexpr int   CELDAS_POR_FRAME        = 256;    // lote que desencola el sistema
 inline constexpr float UMBRAL_MISION_COMPLETA  = 0.995f;
 inline constexpr float DURACION_FADE_PANEL     = 1.2f;   // segundos
+inline constexpr int   NUM_PUNTOS_ESCANEO      = 10;
+inline constexpr unsigned int SEMILLA_ESCANEO  = 42631u;
 
 // ---- Curvas de nivel ----
 inline constexpr int   NIVELES_CURVAS    = 12;
@@ -97,7 +107,8 @@ inline constexpr float UMBRAL_BRILLO               = 0.20f;
 inline constexpr float INTENSIDAD_GLOW             = 0.95f;
 
 // ---- Textos fijos del HUD (sin tildes: stb_easy_font solo cubre ASCII) ----
-inline const std::string TITULO_APP    = "SIMULADOR TOPOGRAFICO";
+inline const std::string TITULO_APP    = "GEODRONE";
+inline const std::string SUBTITULO_APP = "EXPLORACION TOPOGRAFICA";
 inline const std::string PIE_PROYECTO  = "UANCV / COMPUTACION GRAFICA SIS226";
 
 // ---- Persistencia ----
@@ -111,12 +122,17 @@ inline const std::string RUTA_GUARDADO    = "guardado.json";
 } // namespace Configuracion
 
 // ============================================================================
-//  Paleta del simulador (referencia Orano).
+//  Paleta propia del simulador GeoDrone.
 // ============================================================================
 namespace Paleta {
-inline const glm::vec3 FONDO        {0.020f, 0.027f, 0.051f};  // #05070d
-inline const glm::vec3 REJILLA      {0.749f, 0.820f, 0.949f};  // #BFD1F2
-inline const glm::vec3 ACENTO       {1.000f, 0.898f, 0.000f};  // #FFE500
-inline const glm::vec3 TEXTO_SEC    {0.533f, 0.573f, 0.651f};  // #8892A6
-inline const glm::vec3 BLANCO       {1.000f, 1.000f, 1.000f};
+inline const glm::vec3 FONDO        {0.012f, 0.022f, 0.043f};
+inline const glm::vec3 FONDO_ALTO   {0.025f, 0.054f, 0.094f};
+inline const glm::vec3 REJILLA      {0.72f, 0.86f, 1.00f};
+inline const glm::vec3 REJILLA_SEC  {0.25f, 0.43f, 0.60f};
+inline const glm::vec3 ACENTO       {1.000f, 0.82f, 0.02f};
+inline const glm::vec3 TEXTO_SEC    {0.55f, 0.64f, 0.73f};
+inline const glm::vec3 BLANCO       {0.95f, 0.98f, 1.00f};
+inline const glm::vec3 CIAN         {0.10f, 0.88f, 0.92f};
+inline const glm::vec3 VERDE        {0.20f, 0.92f, 0.58f};
+inline const glm::vec3 ALERTA       {1.00f, 0.34f, 0.20f};
 } // namespace Paleta

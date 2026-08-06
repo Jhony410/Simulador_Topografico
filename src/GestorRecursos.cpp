@@ -5,9 +5,15 @@
 
 GLuint GestorRecursos::obtenerShader(const std::string& ruta, GLenum tipo) {
     auto it = shaders.find(ruta);
-    if (it != shaders.end()) { ++aciertos; return it->second; }
+    if (it != shaders.end()) { ++aciertos; return it->second.obtener(); }
 
     std::string fuente = leerArchivo(ruta);
+    if (fuente.empty()) {
+        std::cerr << "[ERROR] Shader inexistente o vacio: " << ruta
+                  << ". Comprueba que ejecutas GeoDrone desde la raiz del proyecto.\n";
+        huboErrores = true;
+        return 0;
+    }
     const char* texto = fuente.c_str();
 
     GLuint id = glCreateShader(tipo);
@@ -19,20 +25,25 @@ GLuint GestorRecursos::obtenerShader(const std::string& ruta, GLenum tipo) {
     if (!ok) {
         char registro[512];
         glGetShaderInfoLog(id, 512, nullptr, registro);
-        std::cerr << (tipo == GL_VERTEX_SHADER ? "VERT " : "FRAG ") << ruta << ":\n"
+        std::cerr << "[ERROR] " << (tipo == GL_VERTEX_SHADER ? "VERT " : "FRAG ") << ruta << ":\n"
                   << registro << "\n";
+        glDeleteShader(id);
+        huboErrores = true;
+        return 0;
     }
-    shaders[ruta] = id;
+    std::cout << "[SHADER] " << ruta << " cargado correctamente\n";
+    shaders[ruta] = ShaderGL(id);
     return id;
 }
 
 GLuint GestorRecursos::obtenerPrograma(const std::string& rutaVertex, const std::string& rutaFragment) {
     std::string clave = rutaVertex + "|" + rutaFragment;
     auto it = programas.find(clave);
-    if (it != programas.end()) { ++aciertos; return it->second; }
+    if (it != programas.end()) { ++aciertos; return it->second.obtener(); }
 
     GLuint v = obtenerShader(rutaVertex,   GL_VERTEX_SHADER);
     GLuint f = obtenerShader(rutaFragment, GL_FRAGMENT_SHADER);
+    if (!v || !f) return 0;
 
     GLuint programa = glCreateProgram();
     glAttachShader(programa, v);
@@ -44,14 +55,17 @@ GLuint GestorRecursos::obtenerPrograma(const std::string& rutaVertex, const std:
     if (!ok) {
         char registro[512];
         glGetProgramInfoLog(programa, 512, nullptr, registro);
-        std::cerr << "LINK (" << clave << "):\n" << registro << "\n";
+        std::cerr << "[ERROR] Enlace de programa (" << clave << "):\n" << registro << "\n";
+        glDeleteProgram(programa);
+        huboErrores = true;
+        return 0;
     }
     // Los objetos shader NO se borran aqui: siguen en la cache para que otro
     // programa pueda reutilizarlos sin volver a compilarlos.
     glDetachShader(programa, v);
     glDetachShader(programa, f);
 
-    programas[clave] = programa;
+    programas[clave] = ProgramaGL(programa);
     return programa;
 }
 
@@ -62,9 +76,9 @@ void GestorRecursos::informarCache() const {
 }
 
 void GestorRecursos::liberar() {
-    for (auto& par : programas) glDeleteProgram(par.second);
-    for (auto& par : shaders)   glDeleteShader(par.second);
+    // clear() ejecuta los destructores RAII de ProgramaGL y ShaderGL.
     programas.clear();
     shaders.clear();
     aciertos = 0;
+    huboErrores = false;
 }

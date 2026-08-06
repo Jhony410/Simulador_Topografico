@@ -10,6 +10,7 @@ class Escena;
 class EstadoMision;
 class GestorRecursos;
 class ContadorRendimiento;
+class Camara;
 
 // ============================================================================
 //  VISTA: capa 2D en proyeccion ortografica (botones de mapa, teclas, textos).
@@ -24,7 +25,8 @@ public:
     // Devuelve el numero de draw calls emitidas.
     int dibujar(Escena& escena, const EstadoTeclas& teclas,
                 float anchoPantalla, float altoPantalla,
-                const ContadorRendimiento& metricas);
+                const ContadorRendimiento& metricas, const Camara& camara,
+                int opcionMenu, int opcionConfiguracion, bool enConfiguracion);
 
 private:
     void dibujarRectangulo(float x, float y, float ancho, float alto, const glm::vec4& color);
@@ -46,14 +48,19 @@ private:
     void dibujarBoton(const glm::vec4& rect, const char* etiqueta, bool activo, bool resaltado);
     void dibujarTecla(const glm::vec4& rect, const char* etiqueta, bool presionada);
 
-    // Bloques de la FASE 3
-    void dibujarBarraProgreso(const EstadoMision& mision, float anchoPantalla, float altoPantalla);
+    // Bloques de mision y telemetria
+    void dibujarBarraProgreso(const Escena& escena, float anchoPantalla, float altoPantalla);
     void dibujarTextoMision(const EstadoMision& mision, float anchoPantalla, float altoPantalla);
     void dibujarPanelLateral(const EstadoMision& mision, float anchoPantalla, float altoPantalla);
-    void dibujarMetricas(const ContadorRendimiento& metricas, float anchoPantalla, float altoPantalla);
+    void dibujarMetricas(const Escena& escena, const ContadorRendimiento& metricas,
+                         const Camara& camara, float anchoPantalla, float altoPantalla);
     void dibujarAviso(const Escena& escena, float anchoPantalla, float altoPantalla);
+    void dibujarPanelMedicion(const Escena& escena, float anchoPantalla, float altoPantalla);
+    void dibujarMenuEstado(const Escena& escena, float anchoPantalla, float altoPantalla,
+                           int opcionMenu, int opcionConfiguracion, bool enConfiguracion);
+    void dibujarAdvertencias(const Escena& escena, float anchoPantalla, float altoPantalla);
 
-    // Bloques de la FASE 7
+    // Bloques de identidad y controles
     void dibujarEsquinas(float anchoPantalla, float altoPantalla);
     void dibujarClusterTeclas(const EstadoTeclas& teclas, float anchoPantalla, float altoPantalla);
 

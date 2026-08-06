@@ -5,6 +5,7 @@
 #include <GLFW/glfw3.h>
 
 #include <iostream>
+#include <algorithm>
 #include <string>
 
 bool Aplicacion::inicializar() {
@@ -12,18 +13,23 @@ bool Aplicacion::inicializar() {
     if (!escena.inicializar()) return false;
 
     // 2) Ventana y contexto de OpenGL 3.3 Core.
-    if (!glfwInit()) { std::cerr << "ERROR: glfwInit\n"; return false; }
+    std::cout << "[INIT] Inicializando GLFW\n";
+    if (!glfwInit()) { std::cerr << "[ERROR] GLFW no pudo inicializarse. Verifica el controlador grafico.\n"; return false; }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_SAMPLES, 4);
 
     ventana = glfwCreateWindow(Configuracion::ANCHO_VENTANA, Configuracion::ALTO_VENTANA,
-                               "Simulador Topografico", nullptr, nullptr);
-    if (!ventana) { std::cerr << "ERROR ventana\n"; glfwTerminate(); return false; }
+                               "GeoDrone - Exploracion Topografica", nullptr, nullptr);
+    if (!ventana) { std::cerr << "[ERROR] No se pudo crear la ventana OpenGL 3.3.\n"; glfwTerminate(); return false; }
     glfwMakeContextCurrent(ventana);
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        std::cerr << "ERROR GLAD\n";
+        std::cerr << "[ERROR] GLAD no pudo resolver las funciones OpenGL.\n";
+        glfwDestroyWindow(ventana);
+        ventana = nullptr;
+        glfwTerminate();
         return false;
     }
 
@@ -31,7 +37,13 @@ bool Aplicacion::inicializar() {
     controlador.inicializar(ventana, &escena, &camara);
 
     // 4) VISTA: compila shaders y sube la geometria inicial.
-    if (!renderizador.inicializar()) return false;
+    if (!renderizador.inicializar()) {
+        renderizador.liberar();
+        glfwDestroyWindow(ventana);
+        ventana = nullptr;
+        glfwTerminate();
+        return false;
+    }
     renderizador.sincronizarConEscena(escena);
 
     camara.establecerRadio(Configuracion::CAM_RADIO_INICIAL);
@@ -39,13 +51,15 @@ bool Aplicacion::inicializar() {
     camara.saltarAObjetivo();   // el primer frame no debe venir interpolado
     actualizarTitulo();
 
-    std::cout << "\nControles: Flechas/WASD mover | Espacio/Shift subir-bajar | "
-                 "mouse rotar | scroll zoom | botones 1-4 mapa | ESC salir\n\n";
+    std::cout << "[INIT] OpenGL " << glGetString(GL_VERSION) << " | GPU "
+              << glGetString(GL_RENDERER) << "\n";
+    std::cout << "[INIT] Enter iniciar | WASD mover | C camara | V visualizacion | "
+                 "X medicion | ESC pausa\n";
     return true;
 }
 
 void Aplicacion::actualizarTitulo() {
-    std::string titulo = "Simulador Topografico  |  " + escena.obtenerTerreno().obtenerNombreArchivo() +
+    std::string titulo = "GeoDrone  |  " + escena.obtenerTerreno().obtenerNombreArchivo() +
                          "  [" + std::to_string(escena.obtenerMapaActual() + 1) + "/" +
                          std::to_string(escena.obtenerMapas().size()) + "]";
     glfwSetWindowTitle(ventana, titulo.c_str());
@@ -68,7 +82,7 @@ void Aplicacion::ejecutar() {
 
     while (!glfwWindowShouldClose(ventana)) {
         float ahora = (float)glfwGetTime();
-        float dt = ahora - tiempoAnterior;
+        float dt = std::clamp(ahora - tiempoAnterior, 0.0f, 0.05f);
         tiempoAnterior = ahora;
 
         // ---- CONTROLADOR ----
@@ -83,10 +97,16 @@ void Aplicacion::ejecutar() {
         // Sube a GPU solo lo que el Modelo marco como sucio este frame.
         renderizador.sincronizarConEscena(escena);
         camara.seguir(escena.obtenerDron().obtenerPosicion());
+        camara.establecerDatosDron(escena.obtenerDron().obtenerYaw(),
+                                   escena.obtenerDron().obtenerVelocidad());
         camara.actualizar(dt);
+        camara.evitarTerreno(escena.obtenerTerreno());
         renderizador.renderizar(escena, camara,
                                 controlador.obtenerAncho(), controlador.obtenerAlto(),
-                                controlador.obtenerEstadoTeclas(), dt);
+                                controlador.obtenerEstadoTeclas(), dt,
+                                controlador.obtenerOpcionMenu(),
+                                controlador.obtenerOpcionConfiguracion(),
+                                controlador.estaEnConfiguracion());
 
         glfwSwapBuffers(ventana);
         glfwPollEvents();

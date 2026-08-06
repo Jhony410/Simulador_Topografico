@@ -4,9 +4,8 @@
 
 // ============================================================================
 //  MODELO: curvas de nivel (isolineas).
-//  En la FASE 1 solo se define el contenedor; la generacion por Marching
-//  Squares y el encadenado por grafo llegan en la FASE 4. Se declara ahora
-//  para que la Vista y el resto del Modelo ya conozcan el tipo de dato.
+//  La generacion por Marching Squares y el encadenado por grafo viven en
+//  modulos separados para que la Vista consuma un dato independiente.
 // ============================================================================
 
 // Una isolinea: puntos en el plano XZ del mundo, todos a la misma altura.

@@ -16,7 +16,7 @@ public:
     void inicializar(GestorRecursos& recursos);
     void liberar();
 
-    // Sube la malla interleaved [x, y, z, idHelice].
+    // Sube la malla interleaved [x, y, z, nx, ny, nz, idHelice].
     void subirMalla(const MallaCruda& malla, const glm::vec3 pivotes[4]);
 
     // Devuelve el numero de draw calls emitidas.
@@ -31,6 +31,7 @@ private:
     GLint  locModelo = -1, locVista = -1, locProyeccion = -1;
     GLint  locTiempo = -1, locGiro = -1, locPivotes = -1, locColor = -1, locAlpha = -1;
     GLint  locEmision = -1;
+    GLint  locPosicionCamara = -1;
 
     GLuint vao = 0, vbo = 0, eboTriangulos = 0, eboAristas = 0;
     int    numeroIndices = 0;    // triangulos del relleno

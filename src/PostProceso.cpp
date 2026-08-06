@@ -52,11 +52,15 @@ void PostProceso::destruirObjetivos() {
     if (texColor)       { glDeleteTextures(1, &texColor); texColor = 0; }
     if (texBrillo)      { glDeleteTextures(1, &texBrillo); texBrillo = 0; }
     if (rboProfundidad) { glDeleteRenderbuffers(1, &rboProfundidad); rboProfundidad = 0; }
+    if (fboMsaa) { glDeleteFramebuffers(1, &fboMsaa); fboMsaa = 0; }
+    if (rboColorMsaa[0]) { glDeleteRenderbuffers(2, rboColorMsaa); rboColorMsaa[0] = rboColorMsaa[1] = 0; }
+    if (rboProfundidadMsaa) { glDeleteRenderbuffers(1, &rboProfundidadMsaa); rboProfundidadMsaa = 0; }
     for (int i = 0; i < 2; ++i) {
         if (fboPing[i]) { glDeleteFramebuffers(1, &fboPing[i]); fboPing[i] = 0; }
         if (texPing[i]) { glDeleteTextures(1, &texPing[i]); texPing[i] = 0; }
     }
     listo = false;
+    usaMsaa = false;
 }
 
 void PostProceso::crearObjetivos(int nuevoAncho, int nuevoAlto) {
@@ -116,6 +120,34 @@ void PostProceso::crearObjetivos(int nuevoAncho, int nuevoAlto) {
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // ---- FBO multisample: la escena se rasteriza aqui y luego se resuelve a
+    // las dos texturas anteriores. Asi MSAA tambien funciona con postproceso.
+    glGenFramebuffers(1, &fboMsaa);
+    glBindFramebuffer(GL_FRAMEBUFFER, fboMsaa);
+    glGenRenderbuffers(2, rboColorMsaa);
+    for (int i = 0; i < 2; ++i) {
+        glBindRenderbuffer(GL_RENDERBUFFER, rboColorMsaa[i]);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, muestrasMsaa, GL_RGBA16F, ancho, alto);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i,
+                                  GL_RENDERBUFFER, rboColorMsaa[i]);
+    }
+    glGenRenderbuffers(1, &rboProfundidadMsaa);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboProfundidadMsaa);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, muestrasMsaa, GL_DEPTH_COMPONENT24, ancho, alto);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboProfundidadMsaa);
+    glDrawBuffers(2, attachments);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "[WARN] FBO MSAA incompleto; se usara renderizado sin multisample\n";
+        glDeleteFramebuffers(1, &fboMsaa); fboMsaa = 0;
+        glDeleteRenderbuffers(2, rboColorMsaa); rboColorMsaa[0] = rboColorMsaa[1] = 0;
+        glDeleteRenderbuffers(1, &rboProfundidadMsaa); rboProfundidadMsaa = 0;
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        listo = true;
+        return;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    usaMsaa = true;
     listo = true;
 }
 
@@ -125,7 +157,7 @@ void PostProceso::iniciarCaptura(int nuevoAncho, int nuevoAlto, const glm::vec3&
         crearObjetivos(nuevoAncho, nuevoAlto);
     if (!listo) return;
 
-    glBindFramebuffer(GL_FRAMEBUFFER, fboEscena);
+    glBindFramebuffer(GL_FRAMEBUFFER, usaMsaa ? fboMsaa : fboEscena);
     glViewport(0, 0, ancho, alto);
 
     // Cada attachment se limpia por separado: el 0 al color de fondo y el 1 a
@@ -143,8 +175,21 @@ void PostProceso::dibujarQuad() {
     glBindVertexArray(0);
 }
 
-int PostProceso::componer(int anchoPantalla, int altoPantalla) {
+int PostProceso::componer(int anchoPantalla, int altoPantalla, bool particulas, float tiempo) {
     if (!listo) return 0;
+
+    // Resolver por separado color y emision desde el framebuffer 4x MSAA a
+    // texturas normales, que son las que los shaders pueden muestrear.
+    if (usaMsaa) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fboMsaa);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fboEscena);
+        for (int i = 0; i < 2; ++i) {
+            glReadBuffer(GL_COLOR_ATTACHMENT0 + i);
+            glDrawBuffer(GL_COLOR_ATTACHMENT0 + i);
+            glBlitFramebuffer(0, 0, ancho, alto, 0, 0, ancho, alto,
+                              GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
+    }
 
     // El post-proceso trabaja pixel a pixel sobre imagenes ya terminadas: ni
     // profundidad ni mezcla tienen sentido aqui.
@@ -185,6 +230,10 @@ int PostProceso::componer(int anchoPantalla, int altoPantalla) {
     glUseProgram(progComposicion);
     glUniform1f(glGetUniformLocation(progComposicion, "uIntensidadGlow"),
                 Configuracion::INTENSIDAD_GLOW);
+    glUniform1i(glGetUniformLocation(progComposicion, "uParticulas"), particulas ? 1 : 0);
+    glUniform1f(glGetUniformLocation(progComposicion, "uTiempo"), tiempo);
+    glUniform3fv(glGetUniformLocation(progComposicion, "uFondoBajo"), 1, glm::value_ptr(Paleta::FONDO));
+    glUniform3fv(glGetUniformLocation(progComposicion, "uFondoAlto"), 1, glm::value_ptr(Paleta::FONDO_ALTO));
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texColor);
     glActiveTexture(GL_TEXTURE1);

@@ -28,8 +28,10 @@ bool Terreno::cargarDesdeArchivo(const std::string& ruta) {
 
     finalizar(crudo);
     nombreArchivo = fs::path(ruta).filename().string();
-    std::cout << "  Vertices: " << crudo.size()
-              << "  Triangulos: " << (malla.indices.size() / 3) << "\n";
+    std::cout << "[TERRAIN] Vertices: " << crudo.size();
+    if (mallaDeLineas) std::cout << "  Segmentos: " << (malla.indices.size() / 2);
+    else std::cout << "  Triangulos: " << (malla.indices.size() / 3);
+    std::cout << "\n[HEIGHTMAP] Generado " << anchoGrilla << "x" << anchoGrilla << "\n";
     return true;
 }
 
@@ -85,6 +87,10 @@ void Terreno::finalizar(std::vector<glm::vec3>& crudo) {
     }
 
     rellenarHuecos();
+    double sumaAlturas = 0.0;
+    for (float h : alturas) sumaAlturas += h;
+    alturaMedia = alturas.empty() ? 0.0f
+                                  : static_cast<float>(sumaAlturas / alturas.size());
     generarRejilla(Configuracion::RESOLUCION_REJILLA);
     // El quadtree se construye SOBRE la rejilla ya generada: necesita sus
     // vertices para calcular el AABB real de cada cuadrante.
@@ -179,4 +185,9 @@ float Terreno::alturaEn(float x, float z) const {
     float superior = alturas[(std::size_t)z0 * anchoGrilla + x0] * (1 - tx) + alturas[(std::size_t)z0 * anchoGrilla + x1] * tx;
     float inferior = alturas[(std::size_t)z1 * anchoGrilla + x0] * (1 - tx) + alturas[(std::size_t)z1 * anchoGrilla + x1] * tx;
     return superior * (1 - tz) + inferior * tz;
+}
+
+float Terreno::obtenerDensidad() const {
+    float area = limites.ancho() * limites.profundidad();
+    return area > 1e-5f ? static_cast<float>(obtenerNumeroVertices()) / area : 0.0f;
 }

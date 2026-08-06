@@ -14,6 +14,7 @@ void VistaDron::inicializar(GestorRecursos& recursos) {
     locColor      = glGetUniformLocation(programa, "uColor");
     locAlpha      = glGetUniformLocation(programa, "uAlpha");
     locEmision    = glGetUniformLocation(programa, "uEmision");
+    locPosicionCamara = glGetUniformLocation(programa, "uPosicionCamara");
 }
 
 void VistaDron::subirMalla(const MallaCruda& malla, const glm::vec3 pivotes[4]) {
@@ -40,11 +41,13 @@ void VistaDron::subirMalla(const MallaCruda& malla, const glm::vec3 pivotes[4]) 
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(malla.aristas.size() * sizeof(unsigned int)),
                  malla.aristas.data(), GL_STATIC_DRAW);
 
-    const GLsizei paso = 4 * sizeof(float);
+    const GLsizei paso = 7 * sizeof(float);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, paso, (void*)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, paso, (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, paso, (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, paso, (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
 
     glBindVertexArray(0);
     numeroIndices = (int)malla.indices.size();
@@ -64,6 +67,7 @@ int VistaDron::dibujar(const Camara& camara, const glm::mat4& matrizModelo,
     glUniform1f(locTiempo, animacion.tiempo);
     glUniform1f(locGiro,   animacion.velocidadGiro);
     glUniform3fv(locPivotes, 4, glm::value_ptr(pivotesHelices[0]));
+    glUniform3fv(locPosicionCamara, 1, glm::value_ptr(camara.obtenerPosicion()));
     glBindVertexArray(vao);
 
     if (material.dibujarRelleno) {

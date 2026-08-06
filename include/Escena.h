@@ -1,16 +1,20 @@
 #pragma once
 #include "AvisoHUD.h"
+#include "Ajustes.h"
 #include "Componente.h"
 #include "Componentes.h"
 #include "CurvasNivel.h"
 #include "Dron.h"
 #include "EstadoMision.h"
+#include "EstadoAplicacion.h"
 #include "GeneradorCurvas.h"
 #include "MallaCruda.h"
 #include "MapaExploracion.h"
 #include "MarcadoresSondeo.h"
 #include "NodoEscena.h"
 #include "SistemaEscaneo.h"
+#include "SistemaExploracion.h"
+#include "SistemaMedicion.h"
 #include "Terreno.h"
 
 #include <memory>
@@ -31,6 +35,7 @@ public:
 
     // Cambia de mapa: recarga el terreno y reposiciona el dron.
     bool cargarMapa(int indice);
+    bool reiniciarMision();
 
     // Indice del mapa cuyo nombre de archivo coincide, o -1 si no esta.
     int buscarMapaPorNombre(const std::string& nombreArchivo) const;
@@ -58,6 +63,15 @@ public:
     void mostrarAviso(const std::string& texto);
     const EstadoMision&     obtenerEstadoMision() const { return estadoMision; }
     const SistemaEscaneo&   obtenerSistemaEscaneo() const { return sistemaEscaneo; }
+    SistemaExploracion& obtenerSistemaExploracion() { return sistemaExploracion; }
+    const SistemaExploracion& obtenerSistemaExploracion() const { return sistemaExploracion; }
+    SistemaMedicion& obtenerSistemaMedicion() { return sistemaMedicion; }
+    const SistemaMedicion& obtenerSistemaMedicion() const { return sistemaMedicion; }
+    Ajustes& obtenerAjustes() { return ajustes; }
+    const Ajustes& obtenerAjustes() const { return ajustes; }
+    EstadoAplicacion obtenerEstadoAplicacion() const { return estadoAplicacion; }
+    void establecerEstadoAplicacion(EstadoAplicacion estado) { estadoAplicacion = estado; }
+    const std::string& obtenerError() const { return mensajeError; }
 
     // La Vista pregunta una vez por frame si debe resubir el VBO de curvas.
     bool consumirCurvasSucias() { bool s = curvasSucias; curvasSucias = false; return s; }
@@ -93,10 +107,15 @@ private:
     CurvasNivel      curvas;
     MarcadoresSondeo marcadores;
     SistemaEscaneo   sistemaEscaneo;
+    SistemaExploracion sistemaExploracion;
+    SistemaMedicion  sistemaMedicion;
     EstadoMision     estadoMision;
     GeneradorCurvas  generadorCurvas;
     AvisoHUD         aviso;
     bool             curvasSucias = true;
+    Ajustes          ajustes;
+    EstadoAplicacion estadoAplicacion = EstadoAplicacion::Loading;
+    std::string      mensajeError;
 
     // Geometria del dron: se carga una vez y se reutiliza entre mapas.
     MallaCruda mallaDron;

@@ -1,5 +1,6 @@
 #pragma once
 #include <glad/glad.h>
+#include "RecursoGL.h"
 #include <string>
 #include <unordered_map>
 
@@ -25,6 +26,9 @@
 // ============================================================================
 class GestorRecursos {
 public:
+    GestorRecursos() = default;
+    GestorRecursos(const GestorRecursos&) = delete;
+    GestorRecursos& operator=(const GestorRecursos&) = delete;
     // Devuelve el programa enlazado, compilando solo lo que aun no este en cache.
     GLuint obtenerPrograma(const std::string& rutaVertex, const std::string& rutaFragment);
 
@@ -34,11 +38,13 @@ public:
     std::size_t programasEnCache() const { return programas.size(); }
     std::size_t shadersEnCache()   const { return shaders.size(); }
     int reutilizaciones()          const { return aciertos; }
+    bool tieneErrores() const { return huboErrores; }
 
 private:
     GLuint obtenerShader(const std::string& ruta, GLenum tipo);
 
-    std::unordered_map<std::string, GLuint> shaders;
-    std::unordered_map<std::string, GLuint> programas;
+    std::unordered_map<std::string, ShaderGL> shaders;
+    std::unordered_map<std::string, ProgramaGL> programas;
     int aciertos = 0;   // cuantas veces se evito recompilar o reenlazar
+    bool huboErrores = false;
 };

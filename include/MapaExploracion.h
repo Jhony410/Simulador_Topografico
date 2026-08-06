@@ -52,10 +52,12 @@ public:
     int obtenerAlto()  const { return alto; }
     const std::vector<uint8_t>& obtenerMascara() const { return mascara; }
     const LimitesMundo& obtenerLimites() const { return limites; }
+    std::uint64_t obtenerRevision() const { return revision; }
 
 private:
     std::vector<uint8_t> mascara;
     int ancho = 0, alto = 0;
     std::size_t celdasMarcadas = 0;
     LimitesMundo limites;
+    std::uint64_t revision = 0;
 };
